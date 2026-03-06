@@ -1,6 +1,11 @@
 import enum
 
 
+class BankEnum(str, enum.Enum):
+    BANCOLOMBIA = "BANCOLOMBIA"
+    RAPPI = "RAPPI"
+
+
 class Category(str, enum.Enum):
     HOGAR = "HOGAR"
     DOMICILIOS = "DOMICILIOS"

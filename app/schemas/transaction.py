@@ -9,7 +9,6 @@ from app.models.enums import Category, CategoryMethod
 
 class TransactionResponse(BaseModel):
     id: UUID
-    account_id: UUID
     source_file_id: UUID
     posted_at: date
     description_raw: str

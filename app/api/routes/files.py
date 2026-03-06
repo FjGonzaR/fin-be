@@ -15,7 +15,6 @@ storage_service = StorageService()
 async def upload_file(
     db: DbSession,
     file: UploadFile = File(...),
-    bank_name: str = Form(...),
     account_id: UUID = Form(...),
 ):
     """
@@ -47,7 +46,7 @@ async def upload_file(
 
     # Create new source file record
     source_file = SourceFile(
-        bank_name=bank_name,
+        account_id=account_id,
         file_type=file_type,
         file_hash=file_hash,
         original_filename=file.filename,

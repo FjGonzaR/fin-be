@@ -1,0 +1,424 @@
+openapi: 3.0.3
+info:
+  title: Finanzas Backend API
+  description: Personal finance ETL + API
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: accounts
+    description: Bank accounts
+  - name: files
+    description: Source file upload
+  - name: etl
+    description: ETL processing pipeline
+  - name: transactions
+    description: Parsed transactions
+
+paths:
+
+  # ──────────────────────────────────────────────
+  # ACCOUNTS
+  # ──────────────────────────────────────────────
+
+  /accounts:
+    get:
+      tags: [accounts]
+      summary: List all accounts
+      operationId: listAccounts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountResponse'
+
+    post:
+      tags: [accounts]
+      summary: Create a new account
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountCreate'
+            example:
+              bank_name: BANCOLOMBIA
+              account_name: Cuenta de Ahorros
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+
+  # ──────────────────────────────────────────────
+  # FILES
+  # ──────────────────────────────────────────────
+
+  /files/upload:
+    post:
+      tags: [files]
+      summary: Upload a bank statement file
+      description: |
+        Accepts `.xlsx` (Bancolombia) or `.pdf` (Rappi) files.
+        Returns the existing record if the file hash already exists.
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, account_id]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Bank statement file (.xlsx or .pdf)
+                account_id:
+                  type: string
+                  format: uuid
+                  description: Account this file belongs to
+      responses:
+        '200':
+          description: OK (file already existed or newly created)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+        '400':
+          description: Unsupported file type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  # ──────────────────────────────────────────────
+  # ETL
+  # ──────────────────────────────────────────────
+
+  /etl/process/{file_id}:
+    post:
+      tags: [etl]
+      summary: Run ETL pipeline for a source file
+      description: |
+        Parses, normalizes, categorizes, and persists transactions for the given
+        source file. The bank/parser is resolved automatically from the account
+        associated with the file.
+        Returns immediately if the file was already processed.
+      operationId: processEtl
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: ETL result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ETLProcessResponse'
+        '404':
+          description: Source file not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '500':
+          description: ETL processing failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /etl/reset/{file_id}:
+    delete:
+      tags: [etl]
+      summary: Reset ETL for a source file
+      description: |
+        Deletes all transactions and raw rows associated with the file and
+        resets its `parse_status` back to `UPLOADED`.
+      operationId: resetEtl
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Reset result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id:
+                    type: string
+                    format: uuid
+                  deleted_transactions:
+                    type: integer
+                  deleted_raw_rows:
+                    type: integer
+                  status:
+                    type: string
+                    example: UPLOADED
+        '404':
+          description: Source file not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  # ──────────────────────────────────────────────
+  # TRANSACTIONS
+  # ──────────────────────────────────────────────
+
+  /transactions:
+    get:
+      tags: [transactions]
+      summary: List transactions for an account
+      operationId: listTransactions
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Account UUID to filter by
+        - name: months
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "2025-01,2025-02"
+          description: |
+            Comma-separated list of months in `YYYY-MM` format.
+            When provided, only transactions within those months are returned.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+
+  /transactions/{transaction_id}/categorize:
+    patch:
+      tags: [transactions]
+      summary: Manually recategorize a transaction
+      description: |
+        Sets the category on the transaction with `category_method=USER`.
+        Optionally seeds a new `category_example` from `description_clean`
+        to improve future automatic categorization.
+      operationId: recategorizeTransaction
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecategorizeRequest'
+            example:
+              category: OCIO
+              description_clean: NETFLIX DL
+      responses:
+        '200':
+          description: Updated transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+# ──────────────────────────────────────────────
+# COMPONENTS
+# ──────────────────────────────────────────────
+
+components:
+
+  parameters:
+    FileId:
+      name: file_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Source file UUID
+
+  schemas:
+
+    # ── Enums ──────────────────────────────────
+
+    BankEnum:
+      type: string
+      enum: [BANCOLOMBIA, RAPPI]
+
+    Category:
+      type: string
+      enum:
+        - HOGAR
+        - DOMICILIOS
+        - CARRO
+        - TRANSPORTE
+        - OCIO
+        - RESTAURANTES
+        - ROPA
+        - SALUD
+        - PRESTACIONES
+        - REGALOS
+        - EDUCACION
+        - TRABAJO
+        - COBRO_BANCARIO
+        - PAGO
+        - OTROS
+
+    CategoryMethod:
+      type: string
+      enum: [RULES, LLM, USER]
+
+    ParseStatus:
+      type: string
+      enum: [UPLOADED, PROCESSED, FAILED]
+
+    # ── Accounts ───────────────────────────────
+
+    AccountCreate:
+      type: object
+      required: [bank_name, account_name]
+      properties:
+        bank_name:
+          $ref: '#/components/schemas/BankEnum'
+        account_name:
+          type: string
+          example: Cuenta de Ahorros
+
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bank_name:
+          $ref: '#/components/schemas/BankEnum'
+        account_name:
+          type: string
+
+    # ── Files ──────────────────────────────────
+
+    FileUploadResponse:
+      type: object
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        parse_status:
+          $ref: '#/components/schemas/ParseStatus'
+        file_hash:
+          type: string
+          description: SHA-256 hash of the file (used for deduplication)
+        original_filename:
+          type: string
+        uploaded_at:
+          type: string
+          format: date-time
+
+    # ── ETL ────────────────────────────────────
+
+    ETLProcessResponse:
+      type: object
+      properties:
+        parsed_rows:
+          type: integer
+        inserted_transactions:
+          type: integer
+        duplicates_skipped:
+          type: integer
+        status:
+          type: string
+          enum: [PROCESSED, ALREADY_PROCESSED, FAILED]
+
+    # ── Transactions ───────────────────────────
+
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_file_id:
+          type: string
+          format: uuid
+        posted_at:
+          type: string
+          format: date
+        description_raw:
+          type: string
+        description_clean:
+          type: string
+        amount:
+          type: number
+          description: Amount in COP (USD transactions are converted at 4000 COP/USD)
+        currency:
+          type: string
+          example: COP
+        merchant_guess:
+          type: string
+          nullable: true
+        details_json:
+          type: object
+          nullable: true
+        category:
+          $ref: '#/components/schemas/Category'
+          nullable: true
+        category_confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          nullable: true
+        category_method:
+          $ref: '#/components/schemas/CategoryMethod'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    RecategorizeRequest:
+      type: object
+      required: [category]
+      properties:
+        category:
+          $ref: '#/components/schemas/Category'
+        description_clean:
+          type: string
+          nullable: true
+          description: |
+            If provided, seeds a new category_example entry so future
+            transactions with this description are auto-categorized.
+
+    # ── Common ─────────────────────────────────
+
+    ErrorDetail:
+      type: object
+      properties:
+        detail:
+          type: string

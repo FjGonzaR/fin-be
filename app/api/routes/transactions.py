@@ -6,7 +6,7 @@ USD_TO_COP = Decimal("4000")
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import DbSession
-from app.models import CategoryExample, Transaction
+from app.models import CategoryExample, SourceFile, Transaction
 from app.models.enums import CategoryMethod
 from app.schemas.transaction import RecategorizeRequest, TransactionResponse
 
@@ -26,7 +26,11 @@ def list_transactions(
     - account_id: required
     - months: optional CSV of YYYY-MM
     """
-    query = db.query(Transaction).filter(Transaction.account_id == account_id)
+    query = (
+        db.query(Transaction)
+        .join(SourceFile, Transaction.source_file_id == SourceFile.id)
+        .filter(SourceFile.account_id == account_id)
+    )
 
     # Filter by months if provided
     if months:

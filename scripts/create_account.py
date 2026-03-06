@@ -5,26 +5,29 @@ import sys
 
 from app.db.session import SessionLocal
 from app.models import Account
+from app.models.enums import BankEnum
 
 
 def create_account(
-    bank_name: str = "Bancolombia",
+    bank_name: str = "BANCOLOMBIA",
     account_name: str = "Cuenta de Ahorros",
-    currency: str = "COP",
 ):
     """Create a new account and print its ID."""
+    try:
+        bank = BankEnum(bank_name.upper())
+    except ValueError:
+        print(f"✗ Invalid bank_name '{bank_name}'. Valid values: {[e.value for e in BankEnum]}")
+        sys.exit(1)
+
     db = SessionLocal()
     try:
-        account = Account(
-            bank_name=bank_name, account_name=account_name, currency=currency
-        )
+        account = Account(bank_name=bank, account_name=account_name)
         db.add(account)
         db.commit()
         db.refresh(account)
         print(f"✓ Created account with ID: {account.id}")
         print(f"  Bank: {account.bank_name}")
         print(f"  Name: {account.account_name}")
-        print(f"  Currency: {account.currency}")
         return account.id
     except Exception as e:
         print(f"✗ Failed to create account: {e}")
@@ -38,7 +41,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         bank_name = sys.argv[1]
         account_name = sys.argv[2] if len(sys.argv) > 2 else "Cuenta"
-        currency = sys.argv[3] if len(sys.argv) > 3 else "COP"
-        create_account(bank_name, account_name, currency)
+        create_account(bank_name, account_name)
     else:
         create_account()

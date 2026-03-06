@@ -17,9 +17,6 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    account_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False
-    )
     source_file_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source_files.id"), nullable=False
     )
@@ -39,6 +36,5 @@ class Transaction(Base):
     )
 
     __table_args__ = (
-        Index("ix_transactions_account_posted", "account_id", "posted_at"),
         Index("ix_transactions_posted", "posted_at"),
     )

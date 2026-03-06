@@ -14,17 +14,13 @@ router = APIRouter()
 def process_etl(
     file_id: UUID,
     db: DbSession,
-    account_id: UUID,
 ):
     """
     Process ETL for a source file.
-
-    Query params:
-    - account_id: UUID of the account to associate transactions with
     """
     try:
         pipeline = ETLPipeline(db)
-        result = pipeline.process_file(file_id, account_id)
+        result = pipeline.process_file(file_id)
         return ETLProcessResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

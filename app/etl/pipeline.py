@@ -13,6 +13,7 @@ from app.etl.normalization import normalize_rappicard_transaction, normalize_tra
 from app.etl.parsers.bancolombia_xlsx_pesos import parse_bancolombia_xlsx_pesos
 from app.etl.parsers.rappicard_davivienda_pdf import parse_rappicard_davivienda_pdf
 from app.models import CategoryExample, RawRow, SourceFile, Transaction
+from app.models.enums import BankEnum
 from app.services.llm_client import OpenRouterClient
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class ETLPipeline:
     def __init__(self, db: Session):
         self.db = db
 
-    def process_file(self, file_id: UUID, account_id: UUID) -> dict:
+    def process_file(self, file_id: UUID) -> dict:
         """
         Process a source file through the ETL pipeline.
 
@@ -34,7 +35,7 @@ class ETLPipeline:
                 "status": str
             }
         """
-        # Get source file
+        # Get source file (account is eager-loaded via joined relationship)
         source_file = self.db.query(SourceFile).filter(SourceFile.id == file_id).first()
         if not source_file:
             raise ValueError(f"Source file {file_id} not found")
@@ -54,7 +55,7 @@ class ETLPipeline:
             parsed_rows, normalizer = self._parse_file(source_file, file_path)
 
             # Stage 2: Normalize and persist
-            result = self._normalize_and_persist(source_file, parsed_rows, account_id, normalizer)
+            result = self._normalize_and_persist(source_file, parsed_rows, normalizer)
 
             # Update status
             source_file.parse_status = "PROCESSED"
@@ -87,17 +88,17 @@ class ETLPipeline:
 
     def _parse_file(self, source_file: SourceFile, file_path: Path) -> tuple[list[dict], callable]:
         """Parse file based on bank and file type. Returns (rows, normalizer)."""
-        bank = source_file.bank_name.lower()
+        bank = source_file.account.bank_name
         file_type = source_file.file_type
 
-        if bank == "bancolombia" and file_type == "xlsx":
+        if bank == BankEnum.BANCOLOMBIA and file_type == "xlsx":
             return parse_bancolombia_xlsx_pesos(file_path), normalize_transaction
 
-        if bank == "rappicard" and file_type == "pdf":
+        if bank == BankEnum.RAPPI and file_type == "pdf":
             return parse_rappicard_davivienda_pdf(file_path), normalize_rappicard_transaction
 
         raise ValueError(
-            f"Unsupported bank/file_type: {source_file.bank_name}/{source_file.file_type}"
+            f"Unsupported bank/file_type: {bank}/{file_type}"
         )
 
     def _build_categorization_service(self) -> CategorizationService:
@@ -110,7 +111,7 @@ class ETLPipeline:
         return CategorizationService(examples=examples_dicts, llm_client=llm_client)
 
     def _normalize_and_persist(
-        self, source_file: SourceFile, parsed_rows: list[dict], account_id: UUID, normalizer
+        self, source_file: SourceFile, parsed_rows: list[dict], normalizer
     ) -> dict:
         """Normalize, categorize, and persist transactions."""
         inserted = 0
@@ -130,7 +131,6 @@ class ETLPipeline:
 
             # Create transaction
             transaction = Transaction(
-                account_id=account_id,
                 source_file_id=source_file.id,
                 posted_at=normalized["posted_at"],
                 description_raw=normalized["description_raw"],

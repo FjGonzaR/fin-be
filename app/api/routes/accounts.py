@@ -4,19 +4,20 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.deps import DbSession
 from app.models import Account
+from app.models.enums import BankEnum
 from pydantic import BaseModel
 
 router = APIRouter()
 
 
 class AccountCreate(BaseModel):
-    bank_name: str
+    bank_name: BankEnum
     account_name: str
 
 
 class AccountResponse(BaseModel):
     id: UUID
-    bank_name: str
+    bank_name: BankEnum
     account_name: str
 
     model_config = {"from_attributes": True}
