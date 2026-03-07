@@ -41,3 +41,6 @@ data/uploads/*
 # Database
 *.db
 *.sqlite
+
+# Admin scripts (contain credentials)
+scripts/create_admin.py

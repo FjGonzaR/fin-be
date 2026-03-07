@@ -4,6 +4,7 @@ import enum
 class BankEnum(str, enum.Enum):
     BANCOLOMBIA = "BANCOLOMBIA"
     RAPPI = "RAPPI"
+    FALABELLA = "FALABELLA"
 
 
 class OwnerEnum(str, enum.Enum):
@@ -31,6 +32,7 @@ class Category(str, enum.Enum):
     TRABAJO = "TRABAJO"
     COBRO_BANCARIO = "COBRO_BANCARIO"
     PAGO = "PAGO"
+    PLATAFORMAS = "PLATAFORMAS"
     OTROS = "OTROS"
 
 

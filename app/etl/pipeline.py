@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.etl.categorization import CategorizationService
 from app.etl.dedupe import compute_fingerprint
-from app.etl.normalization import normalize_rappicard_transaction, normalize_transaction
+from app.etl.normalization import normalize_falabella_transaction, normalize_rappicard_transaction, normalize_transaction
 from app.etl.parsers.bancolombia_xlsx_pesos import parse_bancolombia_xlsx_pesos
+from app.etl.parsers.falabella_xlsx_movimientos import parse_falabella_xlsx
 from app.etl.parsers.rappicard_davivienda_pdf import parse_rappicard_davivienda_pdf
 from app.models import CategoryExample, RawRow, SourceFile, Transaction
 from app.models.enums import BankEnum
@@ -96,6 +97,9 @@ class ETLPipeline:
 
         if bank == BankEnum.RAPPI and file_type == "pdf":
             return parse_rappicard_davivienda_pdf(file_path), normalize_rappicard_transaction
+
+        if bank == BankEnum.FALABELLA and file_type == "xlsx":
+            return parse_falabella_xlsx(file_path), normalize_falabella_transaction
 
         raise ValueError(
             f"Unsupported bank/file_type: {bank}/{file_type}"

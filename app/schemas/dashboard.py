@@ -18,9 +18,8 @@ class KPIResponse(BaseModel):
 
 
 class HistogramPoint(BaseModel):
-    month: str  # "YYYY-MM"
+    week: str  # "YYYY-Www"
     total_spent: DecimalAsFloat
-    total_abonos: DecimalAsFloat
 
 
 class CategoryBreakdownItem(BaseModel):

@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     debug: bool = True
     upload_dir: str = "./data/uploads"
 
+    # Auth
+    jwt_secret: str = "change-me-in-production"
+    jwt_expire_minutes: int = 60 * 8  # 8 hours
+
     # LLM / OpenRouter
     llm_provider: str = "openrouter"
     openrouter_api_key: str = ""

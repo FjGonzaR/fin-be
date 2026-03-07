@@ -1,11 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.api.routes import accounts, dashboard, etl, files, transactions
+from app.api.deps import require_auth
+from app.api.routes import accounts, auth, dashboard, etl, files, transactions
 
 api_router = APIRouter()
 
-api_router.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
-api_router.include_router(files.router, prefix="/files", tags=["files"])
-api_router.include_router(etl.router, prefix="/etl", tags=["etl"])
-api_router.include_router(transactions.router, prefix="/transactions", tags=["transactions"])
-api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+_auth = [Depends(require_auth)]
+
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(accounts.router, prefix="/accounts", tags=["accounts"], dependencies=_auth)
+api_router.include_router(files.router, prefix="/files", tags=["files"], dependencies=_auth)
+api_router.include_router(etl.router, prefix="/etl", tags=["etl"], dependencies=_auth)
+api_router.include_router(transactions.router, prefix="/transactions", tags=["transactions"], dependencies=_auth)
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"], dependencies=_auth)

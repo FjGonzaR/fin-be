@@ -78,22 +78,20 @@ def get_histogram(
     category: Category | None = Query(None),
 ):
     spent_expr = func.sum(case((_amount_cop < 0, -_amount_cop), else_=0))
-    income_expr = func.sum(case((_amount_cop > 0, _amount_cop), else_=0))
-    month_label = func.to_char(Transaction.posted_at, "YYYY-MM").label("month")
+    week_label = func.to_char(func.date_trunc("week", Transaction.posted_at), "YYYY-MM-DD").label("week")
 
     q = (
-        db.query(month_label, spent_expr.label("total_spent"), income_expr.label("total_abonos"))
+        db.query(week_label, spent_expr.label("total_spent"))
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
     )
     q = apply_transaction_filters(q, owner, account_id, months, category)
-    rows = q.group_by("month").order_by("month").all()
+    rows = q.group_by("week").order_by("week").all()
 
     return [
         HistogramPoint(
-            month=row.month,
+            week=row.week,
             total_spent=Decimal(str(row.total_spent or 0)),
-            total_abonos=Decimal(str(row.total_abonos or 0)),
         )
         for row in rows
     ]
@@ -114,12 +112,12 @@ def get_by_category(
         db.query(Transaction.category, total_expr, count_expr)
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
-        .filter(_amount_cop < 0)
+        .filter(Transaction.category != Category.PAGO)
     )
     q = apply_transaction_filters(q, owner, account_id, months, category)
     rows = q.group_by(Transaction.category).order_by(total_expr.desc()).all()
 
-    grand_total = sum(Decimal(str(r.total or 0)) for r in rows)
+    grand_total = sum(Decimal(str(r.total or 0)) for r in rows if (r.total or 0) > 0)
 
     result = []
     for row in rows:

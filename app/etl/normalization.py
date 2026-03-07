@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from app.utils.text import normalize_text
 
+_FALABELLA_PAYMENT_KEYWORDS = ("PAGO", "ABONO")
+
 
 def normalize_rappicard_transaction(raw_tx: dict) -> dict:
     """
@@ -83,6 +85,40 @@ def normalize_transaction(raw_tx: dict) -> dict:
 
     if raw_tx.get("extra_details"):
         details["extra_details"] = raw_tx["extra_details"]
+
+    return {
+        "posted_at": raw_tx["posted_at"],
+        "description_raw": description_raw,
+        "description_clean": description_clean,
+        "amount": canonical_amount,
+        "details_json": details,
+    }
+
+
+def normalize_falabella_transaction(raw_tx: dict) -> dict:
+    """
+    Normalize a Banco Falabella raw transaction into canonical format.
+
+    Canonical amount convention:
+    - Description contains PAGO/ABONO => POSITIVE (credit/payment)
+    - Otherwise => NEGATIVE (expense)
+    """
+    description_raw = raw_tx["description_raw"]
+    source_amount = raw_tx["source_amount"]
+
+    desc_upper = description_raw.upper()
+    is_payment = any(kw in desc_upper for kw in _FALABELLA_PAYMENT_KEYWORDS)
+    canonical_amount = source_amount if is_payment else -source_amount
+
+    description_clean = normalize_text(description_raw)
+
+    details: dict = {"source_bank": "falabella"}
+    if raw_tx.get("holder_type"):
+        details["holder_type"] = raw_tx["holder_type"]
+    if raw_tx.get("installments_raw") is not None:
+        details["installments_raw"] = raw_tx["installments_raw"]
+    if raw_tx.get("installment_value") is not None:
+        details["installment_value"] = str(raw_tx["installment_value"])
 
     return {
         "posted_at": raw_tx["posted_at"],

@@ -9,6 +9,8 @@ servers:
     description: Local development
 
 tags:
+  - name: auth
+    description: Authentication
   - name: accounts
     description: Bank accounts
   - name: files
@@ -21,6 +23,46 @@ tags:
     description: Aggregated analytics (KPIs, histogram, category breakdown, top transactions)
 
 paths:
+
+  # ──────────────────────────────────────────────
+  # AUTH
+  # ──────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Login
+      description: |
+        Authenticate with username and password (form data).
+        Returns a Bearer JWT token valid for 8 hours.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
 
   # ──────────────────────────────────────────────
   # ACCOUNTS
@@ -293,10 +335,10 @@ paths:
   /dashboard/histogram:
     get:
       tags: [dashboard]
-      summary: Monthly income vs. expense histogram
+      summary: Weekly expense histogram
       description: |
-        Returns one data point per month with aggregated `total_spent` and
-        `total_abonos` in COP. Sorted ascending by month.
+        Returns one data point per ISO week with aggregated `total_spent` in COP.
+        Sorted ascending by week.
       operationId: getDashboardHistogram
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
@@ -316,10 +358,11 @@ paths:
   /dashboard/by-category:
     get:
       tags: [dashboard]
-      summary: Expense breakdown by category
+      summary: Net spend breakdown by category
       description: |
-        Groups expenses (`amount < 0`) by category.
-        Returns total, percentage of grand total, and count per category.
+        Groups all transactions by category and returns the net delta per category:
+        expenses minus abonos/credits within the same category.
+        The `PAGO` category is excluded from results.
         Transactions without a category appear as `"SIN_CATEGORIZAR"`.
         Sorted by total descending.
       operationId: getDashboardByCategory
@@ -374,7 +417,16 @@ paths:
 # COMPONENTS
 # ──────────────────────────────────────────────
 
+security:
+  - BearerAuth: []
+
 components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 
   parameters:
     FileId:
@@ -426,7 +478,7 @@ components:
 
     BankEnum:
       type: string
-      enum: [BANCOLOMBIA, RAPPI]
+      enum: [BANCOLOMBIA, RAPPI, FALABELLA]
 
     OwnerEnum:
       type: string
@@ -453,6 +505,7 @@ components:
         - TRABAJO
         - COBRO_BANCARIO
         - PAGO
+        - PLATAFORMAS
         - OTROS
 
     CategoryMethod:
@@ -626,16 +679,13 @@ components:
     HistogramPoint:
       type: object
       properties:
-        month:
+        week:
           type: string
-          example: "2025-01"
-          description: Month in YYYY-MM format
+          example: "2025-01-13"
+          description: Start date (Monday) of the week in YYYY-MM-DD format
         total_spent:
           type: number
-          description: Absolute sum of expenses for the month in COP
-        total_abonos:
-          type: number
-          description: Suma de abonos/créditos en COP para el mes
+          description: Absolute sum of expenses for the week in COP
 
     CategoryBreakdownItem:
       type: object
@@ -684,6 +734,15 @@ components:
           $ref: '#/components/schemas/OwnerEnum'
         account_type:
           $ref: '#/components/schemas/AccountTypeEnum'
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: bearer
 
     # ── Common ─────────────────────────────────
 

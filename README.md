@@ -377,6 +377,7 @@ alembic downgrade -1
   test_rappicard_parser.py  # Standalone PDF parser smoke test
 ```
 
-## License
-
-Proprietary
+# Decrypt a file with password MacOS
+```
+qpdf --decrypt --password=1020809348 rappi-lu.pdf rappi-lu-decrypted.pdf
+```
