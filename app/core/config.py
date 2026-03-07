@@ -6,6 +6,11 @@ class Settings(BaseSettings):
     debug: bool = True
     upload_dir: str = "./data/uploads"
 
+    # Supabase Storage
+    supabase_url: str = ""
+    supabase_key: str = ""
+    supabase_bucket: str = "source-files"
+
     # Auth
     jwt_secret: str = "change-me-in-production"
     jwt_expire_minutes: int = 60 * 8  # 8 hours

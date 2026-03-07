@@ -1,4 +1,5 @@
 import logging
+import tempfile
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.etl.parsers.rappicard_davivienda_pdf import parse_rappicard_davivienda_
 from app.models import CategoryExample, RawRow, SourceFile, Transaction
 from app.models.enums import BankEnum
 from app.services.llm_client import OpenRouterClient
+from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +53,18 @@ class ETLPipeline:
             }
 
         try:
-            # Stage 1: Parse
-            file_path = Path(source_file.storage_uri)
-            parsed_rows, normalizer = self._parse_file(source_file, file_path)
+            # Stage 1: Parse — download to temp file so parsers get a real Path
+            storage = StorageService()
+            file_content = storage.download_file(source_file.storage_uri)
+            suffix = f".{source_file.file_type}"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(file_content)
+                tmp_path = Path(tmp.name)
+
+            try:
+                parsed_rows, normalizer = self._parse_file(source_file, tmp_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
 
             # Stage 2: Normalize and persist
             result = self._normalize_and_persist(source_file, parsed_rows, normalizer)

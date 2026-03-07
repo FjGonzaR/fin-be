@@ -14,6 +14,11 @@ def compute_file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
+def compute_file_hash_bytes(content: bytes) -> str:
+    """Compute SHA256 hash of file bytes."""
+    return hashlib.sha256(content).hexdigest()
+
+
 def compute_transaction_fingerprint(
     source_file_id: UUID, row_index: int
 ) -> str:

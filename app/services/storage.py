@@ -2,38 +2,67 @@ import uuid
 from pathlib import Path
 
 from app.core.config import settings
-from app.utils.hashing import compute_file_hash
+from app.utils.hashing import compute_file_hash_bytes
 
 
 class StorageService:
-    def __init__(self, upload_dir: str = settings.upload_dir):
-        self.upload_dir = Path(upload_dir)
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self):
+        self._client = None
+        if settings.supabase_url and settings.supabase_key:
+            from supabase import create_client
+            from storage3._sync.client import SyncStorageClient
+
+            self._client = create_client(settings.supabase_url, settings.supabase_key)
+            # Disable SSL verification (self-signed cert in local chain on macOS)
+            self._client._storage = SyncStorageClient(
+                url=str(self._client.storage_url),
+                headers=self._client.options.headers,
+                verify=False,
+            )
+
+    def _use_supabase(self) -> bool:
+        return self._client is not None
 
     def save_file(self, file_content: bytes, original_filename: str) -> tuple[str, str]:
         """
-        Save uploaded file to local storage.
+        Upload file to Supabase Storage (or local fallback).
 
         Returns:
             tuple: (storage_uri, file_hash)
         """
-        # Generate unique filename
+        file_hash = compute_file_hash_bytes(file_content)
         file_extension = Path(original_filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = self.upload_dir / unique_filename
 
-        # Write file
-        with open(file_path, "wb") as f:
-            f.write(file_content)
+        if self._use_supabase():
+            storage_path = f"uploads/{unique_filename}"
+            self._client.storage.from_(settings.supabase_bucket).upload(
+                storage_path,
+                file_content,
+                {"content-type": self._content_type(file_extension)},
+            )
+            return f"supabase://{settings.supabase_bucket}/{storage_path}", file_hash
 
-        # Compute hash
-        file_hash = compute_file_hash(file_path)
+        # Local fallback
+        upload_dir = Path(settings.upload_dir)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        file_path = upload_dir / unique_filename
+        file_path.write_bytes(file_content)
+        return str(file_path), file_hash
 
-        # Return relative path as storage_uri
-        storage_uri = str(file_path)
+    def download_file(self, storage_uri: str) -> bytes:
+        """Download file content from wherever it was stored."""
+        if storage_uri.startswith("supabase://"):
+            # supabase://<bucket>/<path>
+            without_scheme = storage_uri[len("supabase://"):]
+            bucket, _, storage_path = without_scheme.partition("/")
+            return bytes(self._client.storage.from_(bucket).download(storage_path))
 
-        return storage_uri, file_hash
+        return Path(storage_uri).read_bytes()
 
-    def get_file_path(self, storage_uri: str) -> Path:
-        """Get Path object from storage_uri."""
-        return Path(storage_uri)
+    @staticmethod
+    def _content_type(ext: str) -> str:
+        return {
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".pdf": "application/pdf",
+        }.get(ext.lower(), "application/octet-stream")
