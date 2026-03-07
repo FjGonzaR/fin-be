@@ -6,6 +6,16 @@ class BankEnum(str, enum.Enum):
     RAPPI = "RAPPI"
 
 
+class OwnerEnum(str, enum.Enum):
+    PACHO = "PACHO"
+    LU = "LU"
+
+
+class AccountTypeEnum(str, enum.Enum):
+    CREDITO = "CREDITO"
+    DEBITO = "DEBITO"
+
+
 class Category(str, enum.Enum):
     HOGAR = "HOGAR"
     DOMICILIOS = "DOMICILIOS"

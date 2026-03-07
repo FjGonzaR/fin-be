@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import Date, Enum, ForeignKey, Index, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import Category, CategoryMethod
@@ -34,6 +34,8 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
+
+    source_file: Mapped["SourceFile"] = relationship("SourceFile")  # noqa: F821
 
     __table_args__ = (
         Index("ix_transactions_posted", "posted_at"),

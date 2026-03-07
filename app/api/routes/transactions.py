@@ -1,78 +1,53 @@
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
 
-USD_TO_COP = Decimal("4000")
-
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import DbSession
-from app.models import CategoryExample, SourceFile, Transaction
-from app.models.enums import CategoryMethod
+from app.api.query_helpers import USD_TO_COP, build_transaction_query
+from app.models import CategoryExample, Transaction
+from app.models.enums import Category, CategoryMethod, OwnerEnum
 from app.schemas.transaction import RecategorizeRequest, TransactionResponse
 
 router = APIRouter()
 
 
+def _serialize_tx(tx) -> TransactionResponse:
+    account = tx.source_file.account
+    amt = tx.amount
+    if tx.currency == "USD":
+        amt = (amt * USD_TO_COP).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return TransactionResponse.model_validate({
+        **{k: v for k, v in tx.__dict__.items() if not k.startswith("_")},
+        "amount": amt,
+        "account_id": account.id,
+        "account_name": account.account_name,
+        "bank_name": account.bank_name,
+        "owner": account.owner,
+        "account_type": account.account_type,
+    })
+
+
 @router.get("", response_model=list[TransactionResponse])
 def list_transactions(
     db: DbSession,
-    account_id: UUID = Query(..., description="Account ID to filter by"),
+    account_id: UUID | None = Query(None, description="Account ID to filter by"),
+    owner: OwnerEnum | None = Query(None, description="Owner to filter by"),
     months: str | None = Query(None, description="Comma-separated YYYY-MM (e.g., 2024-01,2024-02)"),
+    category: Category | None = Query(None, description="Filter by category"),
 ):
     """
-    List transactions for an account.
+    List transactions.
 
     Query params:
-    - account_id: required
+    - account_id: optional
+    - owner: optional
     - months: optional CSV of YYYY-MM
+    - category: optional
     """
-    query = (
-        db.query(Transaction)
-        .join(SourceFile, Transaction.source_file_id == SourceFile.id)
-        .filter(SourceFile.account_id == account_id)
-    )
-
-    # Filter by months if provided
-    if months:
-        month_list = [m.strip() for m in months.split(",")]
-        # Convert YYYY-MM to date range filters
-        from datetime import datetime
-
-        filters = []
-        for month_str in month_list:
-            try:
-                year, month = map(int, month_str.split("-"))
-                # Get first and last day of month
-                if month == 12:
-                    start_date = datetime(year, month, 1).date()
-                    end_date = datetime(year + 1, 1, 1).date()
-                else:
-                    start_date = datetime(year, month, 1).date()
-                    end_date = datetime(year, month + 1, 1).date()
-
-                filters.append(
-                    (Transaction.posted_at >= start_date)
-                    & (Transaction.posted_at < end_date)
-                )
-            except ValueError:
-                continue  # Skip invalid month formats
-
-        if filters:
-            from sqlalchemy import or_
-
-            query = query.filter(or_(*filters))
-
-    # Order by posted_at descending
+    query = build_transaction_query(db, owner, account_id, months, category)
     query = query.order_by(Transaction.posted_at.desc())
-
-    transactions = query.all()
-    result = []
-    for tx in transactions:
-        response = TransactionResponse.model_validate(tx)
-        if tx.currency == "USD":
-            response.amount = (response.amount * USD_TO_COP).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        result.append(response)
-    return result
+    return [_serialize_tx(tx) for tx in query.all()]
 
 
 @router.patch("/{transaction_id}/categorize", response_model=TransactionResponse)
@@ -85,7 +60,11 @@ def recategorize_transaction(
     Manually reclassify a transaction.
     Optionally seeds a new category_example from description_clean.
     """
-    tx = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    tx = (
+        build_transaction_query(db, None, None, None)
+        .filter(Transaction.id == transaction_id)
+        .first()
+    )
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -107,4 +86,4 @@ def recategorize_transaction(
 
     db.commit()
     db.refresh(tx)
-    return TransactionResponse.model_validate(tx)
+    return _serialize_tx(tx)

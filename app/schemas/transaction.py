@@ -4,7 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.enums import Category, CategoryMethod
+from app.models.enums import AccountTypeEnum, BankEnum, Category, CategoryMethod, OwnerEnum
+from app.schemas.types import DecimalAsFloat
 
 
 class TransactionResponse(BaseModel):
@@ -13,14 +14,20 @@ class TransactionResponse(BaseModel):
     posted_at: date
     description_raw: str
     description_clean: str
-    amount: Decimal
+    amount: DecimalAsFloat
     currency: str
     merchant_guess: str | None
     details_json: dict | None
     category: Category | None
-    category_confidence: Decimal | None
+    category_confidence: DecimalAsFloat | None
     category_method: CategoryMethod | None
     created_at: datetime
+    # Account fields
+    account_id: UUID
+    account_name: str
+    bank_name: BankEnum
+    owner: OwnerEnum
+    account_type: AccountTypeEnum
 
     model_config = {"from_attributes": True, "frozen": False}
 

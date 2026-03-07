@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Finanzas Backend API
   description: Personal finance ETL + API
-  version: 0.1.0
+  version: 0.2.0
 
 servers:
   - url: http://localhost:8000
@@ -17,6 +17,8 @@ tags:
     description: ETL processing pipeline
   - name: transactions
     description: Parsed transactions
+  - name: dashboard
+    description: Aggregated analytics (KPIs, histogram, category breakdown, top transactions)
 
 paths:
 
@@ -29,6 +31,13 @@ paths:
       tags: [accounts]
       summary: List all accounts
       operationId: listAccounts
+      parameters:
+        - name: owner
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/OwnerEnum'
+          description: Filter accounts by owner
       responses:
         '200':
           description: OK
@@ -180,16 +189,22 @@ paths:
   /transactions:
     get:
       tags: [transactions]
-      summary: List transactions for an account
+      summary: List transactions
       operationId: listTransactions
       parameters:
         - name: account_id
           in: query
-          required: true
+          required: false
           schema:
             type: string
             format: uuid
-          description: Account UUID to filter by
+          description: Filter by account UUID
+        - name: owner
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/OwnerEnum'
+          description: Filter by owner
         - name: months
           in: query
           required: false
@@ -199,6 +214,7 @@ paths:
           description: |
             Comma-separated list of months in `YYYY-MM` format.
             When provided, only transactions within those months are returned.
+        - $ref: '#/components/parameters/CategoryFilter'
       responses:
         '200':
           description: OK
@@ -248,6 +264,112 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorDetail'
 
+  # ──────────────────────────────────────────────
+  # DASHBOARD
+  # ──────────────────────────────────────────────
+
+  /dashboard/kpis:
+    get:
+      tags: [dashboard]
+      summary: KPI summary
+      description: |
+        Returns aggregate KPIs for the filtered set of transactions.
+        All amounts are in COP (USD transactions converted at 4000 COP/USD).
+        `amount < 0` → expense; `amount > 0` → income/credit.
+      operationId: getDashboardKpis
+      parameters:
+        - $ref: '#/components/parameters/OwnerFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/CategoryFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KPIResponse'
+
+  /dashboard/histogram:
+    get:
+      tags: [dashboard]
+      summary: Monthly income vs. expense histogram
+      description: |
+        Returns one data point per month with aggregated `total_spent` and
+        `total_abonos` in COP. Sorted ascending by month.
+      operationId: getDashboardHistogram
+      parameters:
+        - $ref: '#/components/parameters/OwnerFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/CategoryFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HistogramPoint'
+
+  /dashboard/by-category:
+    get:
+      tags: [dashboard]
+      summary: Expense breakdown by category
+      description: |
+        Groups expenses (`amount < 0`) by category.
+        Returns total, percentage of grand total, and count per category.
+        Transactions without a category appear as `"SIN_CATEGORIZAR"`.
+        Sorted by total descending.
+      operationId: getDashboardByCategory
+      parameters:
+        - $ref: '#/components/parameters/OwnerFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/CategoryFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryBreakdownItem'
+
+  /dashboard/top-transactions:
+    get:
+      tags: [dashboard]
+      summary: Top N largest expenses
+      description: |
+        Returns the largest expenses (`amount < 0`) ordered by amount ascending
+        (most negative first). All amounts are returned as positive values in COP.
+      operationId: getDashboardTopTransactions
+      parameters:
+        - $ref: '#/components/parameters/OwnerFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/CategoryFilter'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+          description: Number of transactions to return
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopTransactionItem'
+
 # ──────────────────────────────────────────────
 # COMPONENTS
 # ──────────────────────────────────────────────
@@ -264,6 +386,40 @@ components:
         format: uuid
       description: Source file UUID
 
+    OwnerFilter:
+      name: owner
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/OwnerEnum'
+      description: Filter by owner
+
+    AccountIdFilter:
+      name: account_id
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Filter by account UUID
+
+    MonthsFilter:
+      name: months
+      in: query
+      required: false
+      schema:
+        type: string
+        example: "2025-01,2025-02"
+      description: Comma-separated months in `YYYY-MM` format
+
+    CategoryFilter:
+      name: category
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Category'
+      description: Filter by transaction category
+
   schemas:
 
     # ── Enums ──────────────────────────────────
@@ -271,6 +427,14 @@ components:
     BankEnum:
       type: string
       enum: [BANCOLOMBIA, RAPPI]
+
+    OwnerEnum:
+      type: string
+      enum: [PACHO, LU]
+
+    AccountTypeEnum:
+      type: string
+      enum: [CREDITO, DEBITO]
 
     Category:
       type: string
@@ -303,13 +467,17 @@ components:
 
     AccountCreate:
       type: object
-      required: [bank_name, account_name]
+      required: [bank_name, account_name, owner, account_type]
       properties:
         bank_name:
           $ref: '#/components/schemas/BankEnum'
         account_name:
           type: string
           example: Cuenta de Ahorros
+        owner:
+          $ref: '#/components/schemas/OwnerEnum'
+        account_type:
+          $ref: '#/components/schemas/AccountTypeEnum'
 
     AccountResponse:
       type: object
@@ -321,6 +489,10 @@ components:
           $ref: '#/components/schemas/BankEnum'
         account_name:
           type: string
+        owner:
+          $ref: '#/components/schemas/OwnerEnum'
+        account_type:
+          $ref: '#/components/schemas/AccountTypeEnum'
 
     # ── Files ──────────────────────────────────
 
@@ -376,7 +548,7 @@ components:
           type: string
         amount:
           type: number
-          description: Amount in COP (USD transactions are converted at 4000 COP/USD)
+          description: Amount in COP (USD transactions are converted at 4000 COP/USD). Negative = expense, positive = income.
         currency:
           type: string
           example: COP
@@ -401,6 +573,17 @@ components:
         created_at:
           type: string
           format: date-time
+        account_id:
+          type: string
+          format: uuid
+        account_name:
+          type: string
+        bank_name:
+          $ref: '#/components/schemas/BankEnum'
+        owner:
+          $ref: '#/components/schemas/OwnerEnum'
+        account_type:
+          $ref: '#/components/schemas/AccountTypeEnum'
 
     RecategorizeRequest:
       type: object
@@ -414,6 +597,93 @@ components:
           description: |
             If provided, seeds a new category_example entry so future
             transactions with this description are auto-categorized.
+
+    # ── Dashboard ──────────────────────────────
+
+    KPIResponse:
+      type: object
+      properties:
+        total_spent:
+          type: number
+          description: Absolute sum of expenses in COP
+        total_abonos:
+          type: number
+          description: Suma de abonos/créditos en COP — pagos de deuda, reversos o ingresos
+        net:
+          type: number
+          description: total_abonos - total_spent
+        transaction_count:
+          type: integer
+        expense_count:
+          type: integer
+        abono_count:
+          type: integer
+        avg_monthly_spend:
+          type: number
+          nullable: true
+          description: total_spent divided by number of distinct months. Null when no data.
+
+    HistogramPoint:
+      type: object
+      properties:
+        month:
+          type: string
+          example: "2025-01"
+          description: Month in YYYY-MM format
+        total_spent:
+          type: number
+          description: Absolute sum of expenses for the month in COP
+        total_abonos:
+          type: number
+          description: Suma de abonos/créditos en COP para el mes
+
+    CategoryBreakdownItem:
+      type: object
+      properties:
+        category:
+          type: string
+          nullable: true
+          description: Category name or "SIN_CATEGORIZAR" for uncategorized transactions
+          example: RESTAURANTES
+        total:
+          type: number
+          description: Total expenses for this category in COP (positive value)
+        percentage:
+          type: number
+          description: Percentage of grand total (0–100)
+          example: 23.45
+        count:
+          type: integer
+          description: Number of transactions in this category
+
+    TopTransactionItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        posted_at:
+          type: string
+          format: date
+        description_clean:
+          type: string
+        amount:
+          type: number
+          description: Expense amount in COP, always positive (absolute value)
+        category:
+          type: string
+          nullable: true
+        merchant_guess:
+          type: string
+          nullable: true
+        account_name:
+          type: string
+        bank_name:
+          $ref: '#/components/schemas/BankEnum'
+        owner:
+          $ref: '#/components/schemas/OwnerEnum'
+        account_type:
+          $ref: '#/components/schemas/AccountTypeEnum'
 
     # ── Common ─────────────────────────────────
 
