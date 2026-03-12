@@ -5,6 +5,7 @@ class BankEnum(str, enum.Enum):
     BANCOLOMBIA = "BANCOLOMBIA"
     RAPPI = "RAPPI"
     FALABELLA = "FALABELLA"
+    NEQUI = "NEQUI"
 
 
 class OwnerEnum(str, enum.Enum):
@@ -15,6 +16,7 @@ class OwnerEnum(str, enum.Enum):
 class AccountTypeEnum(str, enum.Enum):
     CREDITO = "CREDITO"
     DEBITO = "DEBITO"
+    AHORROS = "AHORROS"
 
 
 class Category(str, enum.Enum):
@@ -33,6 +35,8 @@ class Category(str, enum.Enum):
     COBRO_BANCARIO = "COBRO_BANCARIO"
     PAGO = "PAGO"
     PLATAFORMAS = "PLATAFORMAS"
+    INGRESO = "INGRESO"
+    INVERSION = "INVERSION"
     OTROS = "OTROS"
 
 

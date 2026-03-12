@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Enum
+from sqlalchemy import Enum, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,6 +20,7 @@ class Account(Base):
     account_name: Mapped[str] = mapped_column(nullable=False)
     owner: Mapped[OwnerEnum] = mapped_column(_owner_col, nullable=False)
     account_type: Mapped[AccountTypeEnum] = mapped_column(_account_type_col, nullable=False)
+    file_password: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )

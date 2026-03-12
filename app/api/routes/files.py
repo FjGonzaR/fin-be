@@ -3,9 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.api.deps import DbSession
-from app.models import SourceFile
+from app.models import Account, SourceFile
 from app.schemas.file import FileUploadResponse
 from app.services.storage import StorageService
+from app.utils.encryption import encrypt_password
 
 router = APIRouter()
 storage_service = StorageService()
@@ -16,6 +17,7 @@ async def upload_file(
     db: DbSession,
     file: UploadFile = File(...),
     account_id: UUID = Form(...),
+    file_password: str | None = Form(None, description="Password for encrypted files (e.g. Nequi PDF). Stored encrypted."),
 ):
     """
     Upload a file for ETL processing.
@@ -37,11 +39,19 @@ async def upload_file(
     # Save file and compute hash
     storage_uri, file_hash = storage_service.save_file(content, filename)
 
+    # If a password was provided, encrypt and persist it on the account
+    if file_password:
+        account = db.query(Account).filter(Account.id == account_id).first()
+        if account:
+            account.file_password = encrypt_password(file_password)
+            db.add(account)
+
     # Check if file already exists by hash
     existing_file = (
         db.query(SourceFile).filter(SourceFile.file_hash == file_hash).first()
     )
     if existing_file:
+        db.commit()
         return FileUploadResponse.model_validate(existing_file)
 
     # Create new source file record

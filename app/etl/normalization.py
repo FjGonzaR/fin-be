@@ -95,6 +95,56 @@ def normalize_transaction(raw_tx: dict) -> dict:
     }
 
 
+def normalize_nequi_transaction(raw_tx: dict) -> dict:
+    """
+    Normalize a Nequi savings account raw transaction.
+
+    Canonical amount convention:
+    - valor > 0 (money in)  => POSITIVE amount (ingreso)
+    - valor < 0 (money out) => NEGATIVE amount (gasto, transferencia)
+    """
+    from app.utils.text import normalize_text
+
+    description_clean = normalize_text(raw_tx["description"])
+
+    return {
+        "posted_at": raw_tx["posted_at"],
+        "description_raw": raw_tx["description"],
+        "description_clean": description_clean,
+        "amount": raw_tx["valor"],
+        "details_json": {"source_bank": "nequi"},
+    }
+
+
+def normalize_bancolombia_ahorros_transaction(raw_tx: dict) -> dict:
+    """
+    Normalize a Bancolombia savings account (ahorros) raw transaction.
+
+    Canonical amount convention:
+    - valor > 0 (money in)  => POSITIVE amount (ingreso)
+    - valor < 0 (money out) => NEGATIVE amount (gasto, pago, inversión)
+    """
+    from app.utils.text import normalize_text
+
+    description_raw = raw_tx["description"]
+    if raw_tx.get("reference"):
+        description_raw += " " + raw_tx["reference"]
+
+    description_clean = normalize_text(description_raw)
+
+    details: dict = {"source_bank": "bancolombia_ahorros"}
+    if raw_tx.get("reference"):
+        details["reference"] = raw_tx["reference"]
+
+    return {
+        "posted_at": raw_tx["posted_at"],
+        "description_raw": raw_tx["description"],
+        "description_clean": description_clean,
+        "amount": raw_tx["valor"],
+        "details_json": details,
+    }
+
+
 def normalize_falabella_transaction(raw_tx: dict) -> dict:
     """
     Normalize a Banco Falabella raw transaction into canonical format.

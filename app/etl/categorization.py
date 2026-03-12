@@ -17,7 +17,35 @@ logger = logging.getLogger(__name__)
 
 RULES: dict[str, list[str]] = {
     # More specific rules first to avoid false positives
-Category.DOMICILIOS: [
+
+    # Savings account: ingresos (positive amounts)
+    Category.INGRESO: [
+        "TRANSF DE", "TRANSFERENCIA DESDE NEQUI", "ABONO INTERESES AHORROS",
+        "PAGO INTERBANC",
+        # Nequi ingresos
+        "RECIBI POR BRE-B DE", "Recarga desde Bancolombia", "Recarga en:",
+        "Pago de Intereses", "De ",
+    ],
+
+    # Savings account: inversiones (negative amounts going to investment funds)
+    Category.INVERSION: [
+        "PAGO CORREVAL", "CORREVAL FIDUCIA",
+        "PSE Credicorp Capital", "PAGO PSE Credicorp",
+    ],
+
+    # Savings account: pagos de tarjetas de crédito
+    Category.PAGO: [
+        "ABONO SUCURSAL VIRTUAL",
+        "PAGO SUC VIRT TC",
+    ],
+
+    # Savings account: cobros bancarios
+    Category.COBRO_BANCARIO: [
+        "CUOTA DE MANEJO", "CUOTA MANEJO TRJ",
+        "IMPTO GOBIERNO 4X1000",
+    ],
+
+    Category.DOMICILIOS: [
         "DLO*DIDI FOOD", "DIDI FOOD", "RAPPI",
     ],
     Category.TRANSPORTE: [
@@ -28,7 +56,7 @@ Category.DOMICILIOS: [
     ],
     Category.HOGAR: [
         "EXITO", "D1", "TIENDA D1", "HOMECENTER", "COMCEL",
-        "PAGO FACTURA MOVIL",
+        "PAGO FACTURA MOVIL", "TRANSF A ENEL", "TRANSF A VANTI",
     ],
     Category.RESTAURANTES: [
         "JUAN VALDEZ", "STARBUCKS", "IL FORNO", "PARMESSANO", "CAFE",
@@ -43,11 +71,8 @@ Category.DOMICILIOS: [
     Category.TRABAJO: [
         "OPENAI", "CHATGPT", "CLAUDE", "CURSOR", "OPENROUTER",
     ],
-    Category.COBRO_BANCARIO: [
-        "CUOTA DE MANEJO",
-    ],
-    Category.PAGO: [
-        "ABONO SUCURSAL VIRTUAL",
+    Category.PRESTACIONES: [
+        "PAGO CARDIF", "CARDIF",
     ],
 }
 
@@ -58,7 +83,13 @@ SYSTEM_PROMPT = """You are a personal finance transaction categorizer for Colomb
 
 Classify the transaction into EXACTLY ONE of these categories:
 HOGAR, DOMICILIOS, CARRO, TRANSPORTE, OCIO, RESTAURANTES, ROPA, SALUD,
-PRESTACIONES, REGALOS, EDUCACION, TRABAJO, COBRO_BANCARIO, PAGO, OTROS
+PRESTACIONES, REGALOS, EDUCACION, TRABAJO, COBRO_BANCARIO, PAGO, PLATAFORMAS,
+INGRESO, INVERSION, OTROS
+
+Notes:
+- INGRESO: money received into savings account (transfers in, interest, payments received)
+- INVERSION: outflow to investment funds or financial products
+- PAGO: credit card payments from savings account
 
 Rules:
 - Return ONLY valid JSON, no markdown, no explanation outside the JSON.

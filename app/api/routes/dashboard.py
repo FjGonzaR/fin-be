@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
 
@@ -31,40 +32,53 @@ def get_kpis(
     db: DbSession,
     owner: OwnerEnum | None = Query(None),
     account_id: UUID | None = Query(None),
-    months: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     category: Category | None = Query(None),
 ):
-    transactions = build_transaction_query(db, owner, account_id, months, category).all()
+    transactions = build_transaction_query(db, owner, account_id, date_from, date_to, category).all()
 
-    total_spent = Decimal("0")
-    total_abonos = Decimal("0")
-    expense_count = 0
-    abono_count = 0
+    total_ingresos = Decimal("0")
+    total_gastos = Decimal("0")
+    total_pagos = Decimal("0")
+    total_inversiones = Decimal("0")
     months_seen: set[str] = set()
+
+    _PAGO_CATEGORIES = {Category.PAGO}
+    _INVERSION_CATEGORIES = {Category.INVERSION}
+    _INGRESO_CATEGORIES = {Category.INGRESO}
+    _EXCLUDE_FROM_GASTOS = {Category.PAGO, Category.INVERSION, Category.INGRESO, Category.COBRO_BANCARIO}
 
     for tx in transactions:
         amt = tx.amount
         if tx.currency == "USD":
             amt = (amt * USD_TO_COP).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         months_seen.add(tx.posted_at.strftime("%Y-%m"))
-        if amt < 0:
-            total_spent += abs(amt)
-            expense_count += 1
-        else:
-            total_abonos += amt
-            abono_count += 1
 
-    transaction_count = expense_count + abono_count
+        if tx.category in _INGRESO_CATEGORIES:
+            total_ingresos += amt
+        elif tx.category in _PAGO_CATEGORIES:
+            total_pagos += abs(amt)
+        elif tx.category in _INVERSION_CATEGORIES:
+            total_inversiones += abs(amt)
+        elif tx.category not in _EXCLUDE_FROM_GASTOS:
+            if amt < 0:
+                total_gastos += abs(amt)
+            else:
+                # Credit/refund within a spending category (e.g. OCIO refund).
+                # Not a true INGRESO but counts as an entrada toward the net.
+                total_ingresos += amt
+
     num_months = len(months_seen)
-    avg_monthly_spend = (total_spent / num_months).quantize(Decimal("0.01")) if num_months else None
+    avg_monthly_spend = (total_gastos / num_months).quantize(Decimal("0.01")) if num_months else None
 
     return KPIResponse(
-        total_spent=total_spent,
-        total_abonos=total_abonos,
-        net=total_abonos - total_spent,
-        transaction_count=transaction_count,
-        expense_count=expense_count,
-        abono_count=abono_count,
+        total_ingresos=total_ingresos,
+        total_gastos=total_gastos,
+        total_pagos=total_pagos,
+        total_inversiones=total_inversiones,
+        net=total_ingresos - total_gastos - total_inversiones,
+        transaction_count=len(transactions),
         avg_monthly_spend=avg_monthly_spend,
     )
 
@@ -74,7 +88,8 @@ def get_histogram(
     db: DbSession,
     owner: OwnerEnum | None = Query(None),
     account_id: UUID | None = Query(None),
-    months: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     category: Category | None = Query(None),
 ):
     spent_expr = func.sum(case((_amount_cop < 0, -_amount_cop), else_=0))
@@ -85,7 +100,7 @@ def get_histogram(
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
     )
-    q = apply_transaction_filters(q, owner, account_id, months, category)
+    q = apply_transaction_filters(q, owner, account_id, date_from, date_to, category)
     rows = q.group_by("week").order_by("week").all()
 
     return [
@@ -102,7 +117,8 @@ def get_by_category(
     db: DbSession,
     owner: OwnerEnum | None = Query(None),
     account_id: UUID | None = Query(None),
-    months: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     category: Category | None = Query(None),
 ):
     total_expr = func.sum(-_amount_cop).label("total")
@@ -112,9 +128,10 @@ def get_by_category(
         db.query(Transaction.category, total_expr, count_expr)
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
-        .filter(Transaction.category != Category.PAGO)
+        .filter(Transaction.category.notin_([Category.PAGO, Category.INGRESO, Category.INVERSION]))
+        .filter(_amount_cop < 0)
     )
-    q = apply_transaction_filters(q, owner, account_id, months, category)
+    q = apply_transaction_filters(q, owner, account_id, date_from, date_to, category)
     rows = q.group_by(Transaction.category).order_by(total_expr.desc()).all()
 
     grand_total = sum(Decimal(str(r.total or 0)) for r in rows if (r.total or 0) > 0)
@@ -139,12 +156,13 @@ def get_top_transactions(
     db: DbSession,
     owner: OwnerEnum | None = Query(None),
     account_id: UUID | None = Query(None),
-    months: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     category: Category | None = Query(None),
     limit: int = Query(5, ge=1, le=20),
 ):
     q = (
-        build_transaction_query(db, owner, account_id, months, category)
+        build_transaction_query(db, owner, account_id, date_from, date_to, category)
         .filter(_amount_cop < 0)
         .order_by(_amount_cop.asc())
         .limit(limit)

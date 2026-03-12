@@ -1,19 +1,18 @@
-from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from app.models.enums import AccountTypeEnum, BankEnum, OwnerEnum
-from app.schemas.types import DecimalAsFloat
+from app.schemas.types import DateAsLocalISO, DecimalAsFloat
 
 
 class KPIResponse(BaseModel):
-    total_spent: DecimalAsFloat
-    total_abonos: DecimalAsFloat
+    total_ingresos: DecimalAsFloat
+    total_gastos: DecimalAsFloat
+    total_pagos: DecimalAsFloat
+    total_inversiones: DecimalAsFloat
     net: DecimalAsFloat
     transaction_count: int
-    expense_count: int
-    abono_count: int
     avg_monthly_spend: DecimalAsFloat | None
 
 
@@ -31,7 +30,7 @@ class CategoryBreakdownItem(BaseModel):
 
 class TopTransactionItem(BaseModel):
     id: UUID
-    posted_at: date
+    posted_at: DateAsLocalISO
     description_clean: str
     amount: DecimalAsFloat  # COP, always positive (abs)
     category: str | None

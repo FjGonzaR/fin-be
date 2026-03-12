@@ -10,12 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.etl.categorization import CategorizationService
 from app.etl.dedupe import compute_fingerprint
-from app.etl.normalization import normalize_falabella_transaction, normalize_rappicard_transaction, normalize_transaction
+from app.etl.normalization import normalize_bancolombia_ahorros_transaction, normalize_falabella_transaction, normalize_nequi_transaction, normalize_rappicard_transaction, normalize_transaction
+from app.etl.parsers.bancolombia_ahorros_xlsx import parse_bancolombia_ahorros_xlsx
+from app.etl.parsers.nequi_pdf import parse_nequi_pdf
 from app.etl.parsers.bancolombia_xlsx_pesos import parse_bancolombia_xlsx_pesos
 from app.etl.parsers.falabella_xlsx_movimientos import parse_falabella_xlsx
 from app.etl.parsers.rappicard_davivienda_pdf import parse_rappicard_davivienda_pdf
 from app.models import CategoryExample, RawRow, SourceFile, Transaction
-from app.models.enums import BankEnum
+from app.models.enums import AccountTypeEnum, BankEnum
 from app.services.llm_client import OpenRouterClient
 from app.services.storage import StorageService
 
@@ -102,6 +104,16 @@ class ETLPipeline:
         """Parse file based on bank and file type. Returns (rows, normalizer)."""
         bank = source_file.account.bank_name
         file_type = source_file.file_type
+        account_type = source_file.account.account_type
+
+        if bank == BankEnum.NEQUI and file_type == "pdf":
+            from app.utils.encryption import decrypt_password
+            encrypted = source_file.account.file_password
+            password = decrypt_password(encrypted) if encrypted else None
+            return parse_nequi_pdf(file_path, password=password), normalize_nequi_transaction
+
+        if bank == BankEnum.BANCOLOMBIA and file_type == "xlsx" and account_type == AccountTypeEnum.AHORROS:
+            return parse_bancolombia_ahorros_xlsx(file_path), normalize_bancolombia_ahorros_transaction
 
         if bank == BankEnum.BANCOLOMBIA and file_type == "xlsx":
             return parse_bancolombia_xlsx_pesos(file_path), normalize_transaction

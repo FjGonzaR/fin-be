@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
 
@@ -33,19 +34,11 @@ def list_transactions(
     db: DbSession,
     account_id: UUID | None = Query(None, description="Account ID to filter by"),
     owner: OwnerEnum | None = Query(None, description="Owner to filter by"),
-    months: str | None = Query(None, description="Comma-separated YYYY-MM (e.g., 2024-01,2024-02)"),
+    date_from: date | None = Query(None, description="Start date (inclusive), format YYYY-MM-DD"),
+    date_to: date | None = Query(None, description="End date (inclusive), format YYYY-MM-DD"),
     category: Category | None = Query(None, description="Filter by category"),
 ):
-    """
-    List transactions.
-
-    Query params:
-    - account_id: optional
-    - owner: optional
-    - months: optional CSV of YYYY-MM
-    - category: optional
-    """
-    query = build_transaction_query(db, owner, account_id, months, category)
+    query = build_transaction_query(db, owner, account_id, date_from, date_to, category)
     query = query.order_by(Transaction.posted_at.desc())
     return [_serialize_tx(tx) for tx in query.all()]
 

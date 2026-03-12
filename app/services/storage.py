@@ -35,7 +35,8 @@ class StorageService:
         unique_filename = f"{uuid.uuid4()}{file_extension}"
 
         if self._use_supabase():
-            storage_path = f"uploads/{unique_filename}"
+            prefix = settings.supabase_upload_prefix.rstrip("/")
+            storage_path = f"{prefix}/{unique_filename}"
             self._client.storage.from_(settings.supabase_bucket).upload(
                 storage_path,
                 file_content,

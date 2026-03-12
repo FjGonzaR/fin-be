@@ -2,7 +2,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    app_env: str = "local"  # "local" | "production"
+
+    # Database
     database_url: str = "postgresql://finanzas:finanzas123@localhost:5432/finanzas_db"
+    direct_database_url: str = ""  # Supabase Postgres — used when app_env=production
+
     debug: bool = True
     upload_dir: str = "./data/uploads"
 
@@ -10,6 +15,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
     supabase_bucket: str = "source-files"
+    supabase_upload_prefix: str = "uploads/test"
+
+    # CORS
+    allowed_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
 
     # Auth
     jwt_secret: str = "change-me-in-production"
@@ -23,6 +32,12 @@ class Settings(BaseSettings):
     llm_confidence_threshold: float = 0.70
 
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
+
+    @property
+    def effective_database_url(self) -> str:
+        if self.app_env == "production" and self.direct_database_url:
+            return self.direct_database_url
+        return self.database_url
 
 
 settings = Settings()

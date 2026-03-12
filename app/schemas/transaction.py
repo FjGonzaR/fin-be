@@ -1,17 +1,17 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from app.models.enums import AccountTypeEnum, BankEnum, Category, CategoryMethod, OwnerEnum
-from app.schemas.types import DecimalAsFloat
+from app.schemas.types import DateAsLocalISO, DecimalAsFloat
 
 
 class TransactionResponse(BaseModel):
     id: UUID
     source_file_id: UUID
-    posted_at: date
+    posted_at: DateAsLocalISO
     description_raw: str
     description_clean: str
     amount: DecimalAsFloat

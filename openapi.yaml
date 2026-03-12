@@ -120,8 +120,10 @@ paths:
       tags: [files]
       summary: Upload a bank statement file
       description: |
-        Accepts `.xlsx` (Bancolombia) or `.pdf` (Rappi) files.
+        Accepts `.xlsx` or `.pdf` files for any supported bank.
         Returns the existing record if the file hash already exists.
+        If `file_password` is provided it will be encrypted (Fernet/AES-128)
+        and stored on the account for use during ETL processing (e.g. Nequi PDFs).
       operationId: uploadFile
       requestBody:
         required: true
@@ -139,6 +141,11 @@ paths:
                   type: string
                   format: uuid
                   description: Account this file belongs to
+                file_password:
+                  type: string
+                  description: |
+                    Optional password for password-protected files (e.g. Nequi PDF uses the account holder's cédula).
+                    Will be encrypted before storage. Only required once per account — subsequent uploads reuse the stored value.
       responses:
         '200':
           description: OK (file already existed or newly created)
@@ -247,15 +254,8 @@ paths:
           schema:
             $ref: '#/components/schemas/OwnerEnum'
           description: Filter by owner
-        - name: months
-          in: query
-          required: false
-          schema:
-            type: string
-            example: "2025-01,2025-02"
-          description: |
-            Comma-separated list of months in `YYYY-MM` format.
-            When provided, only transactions within those months are returned.
+        - $ref: '#/components/parameters/DateFromFilter'
+        - $ref: '#/components/parameters/DateToFilter'
         - $ref: '#/components/parameters/CategoryFilter'
       responses:
         '200':
@@ -317,12 +317,20 @@ paths:
       description: |
         Returns aggregate KPIs for the filtered set of transactions.
         All amounts are in COP (USD transactions converted at 4000 COP/USD).
-        `amount < 0` → expense; `amount > 0` → income/credit.
+
+        Buckets are determined by transaction category:
+        - `total_ingresos` — transactions categorized as `INGRESO` (money received into savings)
+        - `total_gastos` — negative-amount transactions excluding `PAGO`, `INVERSION`, `INGRESO`, `COBRO_BANCARIO`
+        - `total_pagos` — transactions categorized as `PAGO` (credit card payments from savings)
+        - `total_inversiones` — transactions categorized as `INVERSION` (fund contributions)
+        - `net` — `total_ingresos - total_gastos - total_inversiones` (`total_pagos` excluded to avoid double-counting CC expenses)
+        - `avg_monthly_spend` — `total_gastos` averaged over the number of distinct months in the result set
       operationId: getDashboardKpis
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
-        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/DateFromFilter'
+        - $ref: '#/components/parameters/DateToFilter'
         - $ref: '#/components/parameters/CategoryFilter'
       responses:
         '200':
@@ -343,7 +351,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
-        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/DateFromFilter'
+        - $ref: '#/components/parameters/DateToFilter'
         - $ref: '#/components/parameters/CategoryFilter'
       responses:
         '200':
@@ -360,16 +369,18 @@ paths:
       tags: [dashboard]
       summary: Net spend breakdown by category
       description: |
-        Groups all transactions by category and returns the net delta per category:
-        expenses minus abonos/credits within the same category.
-        The `PAGO` category is excluded from results.
+        Groups expense transactions (amount < 0) by category and returns the absolute total per category.
+        Categories `PAGO`, `INGRESO` and `INVERSION` are excluded (use `/kpis` for those).
+        Only negative-amount transactions are included, so income entries that happen to share
+        a category label do not distort the breakdown.
         Transactions without a category appear as `"SIN_CATEGORIZAR"`.
         Sorted by total descending.
       operationId: getDashboardByCategory
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
-        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/DateFromFilter'
+        - $ref: '#/components/parameters/DateToFilter'
         - $ref: '#/components/parameters/CategoryFilter'
       responses:
         '200':
@@ -392,7 +403,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
-        - $ref: '#/components/parameters/MonthsFilter'
+        - $ref: '#/components/parameters/DateFromFilter'
+        - $ref: '#/components/parameters/DateToFilter'
         - $ref: '#/components/parameters/CategoryFilter'
         - name: limit
           in: query
@@ -455,14 +467,25 @@ components:
         format: uuid
       description: Filter by account UUID
 
-    MonthsFilter:
-      name: months
+    DateFromFilter:
+      name: date_from
       in: query
       required: false
       schema:
         type: string
-        example: "2025-01,2025-02"
-      description: Comma-separated months in `YYYY-MM` format
+        format: date
+        example: "2026-01-01"
+      description: Start date (inclusive) in `YYYY-MM-DD` format
+
+    DateToFilter:
+      name: date_to
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+        example: "2026-03-31"
+      description: End date (inclusive) in `YYYY-MM-DD` format
 
     CategoryFilter:
       name: category
@@ -478,7 +501,7 @@ components:
 
     BankEnum:
       type: string
-      enum: [BANCOLOMBIA, RAPPI, FALABELLA]
+      enum: [BANCOLOMBIA, RAPPI, FALABELLA, NEQUI]
 
     OwnerEnum:
       type: string
@@ -486,7 +509,7 @@ components:
 
     AccountTypeEnum:
       type: string
-      enum: [CREDITO, DEBITO]
+      enum: [CREDITO, DEBITO, AHORROS]
 
     Category:
       type: string
@@ -506,6 +529,8 @@ components:
         - COBRO_BANCARIO
         - PAGO
         - PLATAFORMAS
+        - INGRESO
+        - INVERSION
         - OTROS
 
     CategoryMethod:
@@ -655,25 +680,42 @@ components:
 
     KPIResponse:
       type: object
+      required:
+        - total_ingresos
+        - total_gastos
+        - total_pagos
+        - total_inversiones
+        - net
+        - transaction_count
       properties:
-        total_spent:
+        total_ingresos:
           type: number
-          description: Absolute sum of expenses in COP
-        total_abonos:
+          description: |
+            Sum of positive-amount transactions in COP. Includes:
+            - INGRESO-category transactions (money received into savings account)
+            - Credits/refunds within spending categories (e.g. an OCIO refund)
+        total_gastos:
           type: number
-          description: Suma de abonos/créditos en COP — pagos de deuda, reversos o ingresos
+          description: Absolute sum of expense transactions in COP, excluding PAGO, INVERSION, INGRESO and COBRO_BANCARIO
+        total_pagos:
+          type: number
+          description: Absolute sum of PAGO-category transactions in COP (credit card payments from savings)
+        total_inversiones:
+          type: number
+          description: Absolute sum of INVERSION-category transactions in COP (contributions to investment funds)
         net:
           type: number
-          description: total_abonos - total_spent
+          description: |
+            total_ingresos - total_gastos - total_inversiones.
+            Note: total_pagos is excluded from net because credit card payments settle
+            debt already counted as gastos in the CC accounts — subtracting them again
+            would double-count those expenses.
         transaction_count:
-          type: integer
-        expense_count:
-          type: integer
-        abono_count:
           type: integer
         avg_monthly_spend:
           type: number
           nullable: true
+          description: total_gastos averaged over distinct months in the result set
           description: total_spent divided by number of distinct months. Null when no data.
 
     HistogramPoint:
