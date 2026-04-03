@@ -51,6 +51,30 @@ class StorageService:
         file_path.write_bytes(file_content)
         return str(file_path), file_hash
 
+    def get_signed_url(self, storage_uri: str, expires_in: int = 3600) -> str | None:
+        """
+        Generate a short-lived signed URL for a Supabase-hosted file.
+
+        Returns None for locally stored files (signed URLs not supported).
+        """
+        if not storage_uri.startswith("supabase://"):
+            return None
+        without_scheme = storage_uri[len("supabase://"):]
+        bucket, _, storage_path = without_scheme.partition("/")
+        result = self._client.storage.from_(bucket).create_signed_url(
+            storage_path, expires_in
+        )
+        return result["signedURL"]
+
+    def delete_file(self, storage_uri: str) -> None:
+        """Delete file from Supabase Storage or local filesystem."""
+        if storage_uri.startswith("supabase://"):
+            without_scheme = storage_uri[len("supabase://"):]
+            bucket, _, storage_path = without_scheme.partition("/")
+            self._client.storage.from_(bucket).remove([storage_path])
+        else:
+            Path(storage_uri).unlink(missing_ok=True)
+
     def download_file(self, storage_uri: str) -> bytes:
         """Download file content from wherever it was stored."""
         if storage_uri.startswith("supabase://"):

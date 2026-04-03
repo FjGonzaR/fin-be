@@ -68,6 +68,72 @@ paths:
   # ACCOUNTS
   # ──────────────────────────────────────────────
 
+  /accounts/{account_id}:
+    get:
+      tags: [accounts]
+      summary: Get account by ID
+      operationId: getAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+    put:
+      tags: [accounts]
+      summary: Update an account
+      operationId: updateAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountUpdate'
+      responses:
+        '200':
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+    delete:
+      tags: [accounts]
+      summary: Delete an account
+      description: |
+        Deletes the account and cascade-deletes all associated source files,
+        transactions, and raw rows.
+      operationId: deleteAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
   /accounts:
     get:
       tags: [accounts]
@@ -114,6 +180,138 @@ paths:
   # ──────────────────────────────────────────────
   # FILES
   # ──────────────────────────────────────────────
+
+  /files:
+    get:
+      tags: [files]
+      summary: List all uploaded files
+      operationId: listFiles
+      parameters:
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order by uploaded_at (default newest first)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileMetadata'
+
+  /files/{file_id}/preview:
+    get:
+      tags: [files]
+      summary: Preview raw rows of a processed file
+      operationId: previewFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of rows to return
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilePreviewResponse'
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /files/{file_id}/url:
+    get:
+      tags: [files]
+      summary: Get a signed URL for direct file access
+      description: |
+        Returns a short-lived Supabase Storage signed URL so the client can
+        open or download the file directly without proxying through the backend.
+        Only available when Supabase Storage is configured (returns 501 otherwise).
+      operationId: getFileUrl
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+        - name: expires_in
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 60
+            maximum: 86400
+            default: 3600
+          description: URL validity in seconds (default 1 hour, max 24 hours)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id:
+                    type: string
+                    format: uuid
+                  url:
+                    type: string
+                    format: uri
+                    description: Signed URL valid for `expires_in` seconds
+                  expires_in:
+                    type: integer
+                    description: Validity duration in seconds
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '501':
+          description: Supabase Storage not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /files/{file_id}:
+    delete:
+      tags: [files]
+      summary: Delete a source file
+      description: |
+        Deletes the file from Supabase Storage and removes the database record.
+        Returns 409 if the file has associated transactions — run
+        `DELETE /etl/reset/{file_id}` first to remove them.
+      operationId: deleteFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '409':
+          description: File has associated transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
 
   /files/upload:
     post:
@@ -450,6 +648,15 @@ components:
         format: uuid
       description: Source file UUID
 
+    AccountId:
+      name: account_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Account UUID
+
     OwnerFilter:
       name: owner
       in: query
@@ -543,6 +750,18 @@ components:
 
     # ── Accounts ───────────────────────────────
 
+    AccountUpdate:
+      type: object
+      properties:
+        bank_name:
+          $ref: '#/components/schemas/BankEnum'
+        account_name:
+          type: string
+        owner:
+          $ref: '#/components/schemas/OwnerEnum'
+        account_type:
+          $ref: '#/components/schemas/AccountTypeEnum'
+
     AccountCreate:
       type: object
       required: [bank_name, account_name, owner, account_type]
@@ -573,6 +792,52 @@ components:
           $ref: '#/components/schemas/AccountTypeEnum'
 
     # ── Files ──────────────────────────────────
+
+    FileMetadata:
+      type: object
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        account_id:
+          type: string
+          format: uuid
+        account_name:
+          type: string
+        status:
+          type: string
+          enum: [UPLOADED, PARSING, SUCCESS, FAILED]
+          description: Current processing status of the file
+        uploaded_at:
+          type: string
+          format: date-time
+        hash:
+          type: string
+          description: SHA-256 hash of the file
+
+    FilePreviewResponse:
+      type: object
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+          description: Column names derived from the raw parsed data
+        rows:
+          type: array
+          items:
+            type: object
+          description: First N raw rows as parsed from the source file
+        total_rows:
+          type: integer
+          description: Total number of raw rows stored for this file
 
     FileUploadResponse:
       type: object
