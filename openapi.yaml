@@ -122,8 +122,8 @@ paths:
       description: |
         Accepts `.xlsx` or `.pdf` files for any supported bank.
         Returns the existing record if the file hash already exists.
-        If `file_password` is provided it will be encrypted (Fernet/AES-128)
-        and stored on the account for use during ETL processing (e.g. Nequi PDFs).
+        If `file_password` is provided, the PDF is unlocked in memory before
+        being stored — the password itself is never persisted.
       operationId: uploadFile
       requestBody:
         required: true
@@ -145,7 +145,7 @@ paths:
                   type: string
                   description: |
                     Optional password for password-protected files (e.g. Nequi PDF uses the account holder's cédula).
-                    Will be encrypted before storage. Only required once per account — subsequent uploads reuse the stored value.
+                    Used to unlock the PDF before storage — never persisted.
       responses:
         '200':
           description: OK (file already existed or newly created)
@@ -715,8 +715,7 @@ components:
         avg_monthly_spend:
           type: number
           nullable: true
-          description: total_gastos averaged over distinct months in the result set
-          description: total_spent divided by number of distinct months. Null when no data.
+          description: total_gastos averaged over distinct months in the result set. Null when no data.
 
     HistogramPoint:
       type: object

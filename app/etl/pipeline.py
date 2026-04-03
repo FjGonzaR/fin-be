@@ -107,10 +107,7 @@ class ETLPipeline:
         account_type = source_file.account.account_type
 
         if bank == BankEnum.NEQUI and file_type == "pdf":
-            from app.utils.encryption import decrypt_password
-            encrypted = source_file.account.file_password
-            password = decrypt_password(encrypted) if encrypted else None
-            return parse_nequi_pdf(file_path, password=password), normalize_nequi_transaction
+            return parse_nequi_pdf(file_path, password=None), normalize_nequi_transaction
 
         if bank == BankEnum.BANCOLOMBIA and file_type == "xlsx" and account_type == AccountTypeEnum.AHORROS:
             return parse_bancolombia_ahorros_xlsx(file_path), normalize_bancolombia_ahorros_transaction

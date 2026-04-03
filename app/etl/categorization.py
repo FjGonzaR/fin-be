@@ -41,15 +41,19 @@ RULES: dict[str, list[str]] = {
 
     # Savings account: cobros bancarios
     Category.COBRO_BANCARIO: [
-        "CUOTA DE MANEJO", "CUOTA MANEJO TRJ",
-        "IMPTO GOBIERNO 4X1000",
+        "CUOTA DE MANEJO", "CUOTA MANEJO TRJ", "CUOTA MANEJO",
+        "IMPTO GOBIERNO 4X1000", "4X1000",
+        "COMISION BANCARIA", "COBRO BANCARIO",
     ],
 
     Category.DOMICILIOS: [
         "DLO*DIDI FOOD", "DIDI FOOD", "RAPPI",
     ],
+    Category.CARRO: [
+        "PARQUEADERO",
+    ],
     Category.TRANSPORTE: [
-        "DL DIDI RIDES", "DIDI RIDES", "DLO*DIDI", "UBER", "PARQUEADERO",
+        "DL DIDI RIDES", "DIDI RIDES", "DLO*DIDI", "UBER",
     ],
     Category.SALUD: [
         "FARMATODO", "DROGUERIA", "DROG", "IPS", "ACTION BLACK",
@@ -90,6 +94,7 @@ Notes:
 - INGRESO: money received into savings account (transfers in, interest, payments received)
 - INVERSION: outflow to investment funds or financial products
 - PAGO: credit card payments from savings account
+- COBRO_BANCARIO: bank fees and government charges (e.g. "Cuota De Manejo", "4x1000 tax", maintenance fees, account fees)
 
 Rules:
 - Return ONLY valid JSON, no markdown, no explanation outside the JSON.
