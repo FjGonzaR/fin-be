@@ -19,10 +19,41 @@ tags:
     description: ETL processing pipeline
   - name: transactions
     description: Parsed transactions
+  - name: categories
+    description: Transaction category catalogue
   - name: dashboard
     description: Aggregated analytics (KPIs, histogram, category breakdown, top transactions)
 
 paths:
+
+  # ──────────────────────────────────────────────
+  # CATEGORIES
+  # ──────────────────────────────────────────────
+
+  /categories:
+    get:
+      tags: [categories]
+      summary: List transaction categories
+      operationId: listCategories
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: spending_only
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When true, excludes INGRESO and INVERSION from the list
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
 
   # ──────────────────────────────────────────────
   # AUTH
