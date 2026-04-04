@@ -518,7 +518,7 @@ paths:
 
         Buckets are determined by transaction category:
         - `total_ingresos` — transactions categorized as `INGRESO` (money received into savings)
-        - `total_gastos` — negative-amount transactions excluding `PAGO`, `INVERSION`, `INGRESO`, `COBRO_BANCARIO`
+        - `total_gastos` — negative-amount transactions excluding `PAGO`, `INVERSION`, `INGRESO`, `MOVIMIENTO_ENTRE_BANCOS`
         - `total_pagos` — transactions categorized as `PAGO` (credit card payments from savings)
         - `total_inversiones` — transactions categorized as `INVERSION` (fund contributions)
         - `net` — `total_ingresos - total_gastos - total_inversiones` (`total_pagos` excluded to avoid double-counting CC expenses)
@@ -738,6 +738,7 @@ components:
         - PLATAFORMAS
         - INGRESO
         - INVERSION
+        - MOVIMIENTO_ENTRE_BANCOS
         - OTROS
 
     CategoryMethod:
@@ -961,7 +962,7 @@ components:
             - Credits/refunds within spending categories (e.g. an OCIO refund)
         total_gastos:
           type: number
-          description: Absolute sum of expense transactions in COP, excluding PAGO, INVERSION, INGRESO and COBRO_BANCARIO
+          description: Absolute sum of expense transactions in COP, excluding PAGO, INVERSION, INGRESO and MOVIMIENTO_ENTRE_BANCOS
         total_pagos:
           type: number
           description: Absolute sum of PAGO-category transactions in COP (credit card payments from savings)

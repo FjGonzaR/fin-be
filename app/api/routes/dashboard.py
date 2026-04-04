@@ -47,7 +47,7 @@ def get_kpis(
     _PAGO_CATEGORIES = {Category.PAGO}
     _INVERSION_CATEGORIES = {Category.INVERSION}
     _INGRESO_CATEGORIES = {Category.INGRESO}
-    _EXCLUDE_FROM_GASTOS = {Category.PAGO, Category.INVERSION, Category.INGRESO, Category.COBRO_BANCARIO}
+    _EXCLUDE_FROM_GASTOS = {Category.PAGO, Category.INVERSION, Category.INGRESO, Category.MOVIMIENTO_ENTRE_BANCOS}
 
     for tx in transactions:
         amt = tx.amount

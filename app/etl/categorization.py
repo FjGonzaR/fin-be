@@ -23,8 +23,13 @@ RULES: dict[str, list[str]] = {
         "TRANSF DE", "TRANSFERENCIA DESDE NEQUI", "ABONO INTERESES AHORROS",
         "PAGO INTERBANC",
         # Nequi ingresos
-        "RECIBI POR BRE-B DE", "Recarga desde Bancolombia", "Recarga en:",
+        "RECIBI POR BRE-B DE",
         "Pago de Intereses", "De ",
+    ],
+
+    # Inter-bank transfers between own accounts (not income, not expense)
+    Category.MOVIMIENTO_ENTRE_BANCOS: [
+        "Recarga desde Bancolombia", "Recarga en:",
     ],
 
     # Savings account: inversiones (negative amounts going to investment funds)
@@ -68,9 +73,12 @@ RULES: dict[str, list[str]] = {
         "MAESTRIA DEL FUEGO", "PASTIER", "BOLD*", "TJV", "GRUPO MURRI",
     ],
     Category.OCIO: [
-        "SPOTIFY", "NETFLIX", "CINECITY", "MIRANDA DISCO", "BAR Y GRILL",
-        "APPARTA", "APPLE.COM/BILL", "AEROREPUBLICA", "PRIORITY PASS",
+        "CINECITY", "MIRANDA DISCO", "BAR Y GRILL",
+        "APPARTA", "AEROREPUBLICA", "PRIORITY PASS",
         "FALABELLA", "AMAZON MKTPL", "PAYPAL", "MERCADOPAGO",
+    ],
+    Category.PLATAFORMAS: [
+        "NETFLIX", "SPOTIFY", "APPLE.COM/BILL",
     ],
     Category.TRABAJO: [
         "OPENAI", "CHATGPT", "CLAUDE", "CURSOR", "OPENROUTER",
@@ -88,13 +96,14 @@ SYSTEM_PROMPT = """You are a personal finance transaction categorizer for Colomb
 Classify the transaction into EXACTLY ONE of these categories:
 HOGAR, DOMICILIOS, CARRO, TRANSPORTE, OCIO, RESTAURANTES, ROPA, SALUD,
 PRESTACIONES, REGALOS, EDUCACION, TRABAJO, COBRO_BANCARIO, PAGO, PLATAFORMAS,
-INGRESO, INVERSION, OTROS
+INGRESO, INVERSION, MOVIMIENTO_ENTRE_BANCOS, OTROS
 
 Notes:
 - INGRESO: money received into savings account (transfers in, interest, payments received)
 - INVERSION: outflow to investment funds or financial products
 - PAGO: credit card payments from savings account
 - COBRO_BANCARIO: bank fees and government charges (e.g. "Cuota De Manejo", "4x1000 tax", maintenance fees, account fees)
+- MOVIMIENTO_ENTRE_BANCOS: inter-bank transfers between own accounts (recargas, transfers to/from own Nequi/Bancolombia)
 
 Rules:
 - Return ONLY valid JSON, no markdown, no explanation outside the JSON.
