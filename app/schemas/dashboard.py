@@ -13,11 +13,11 @@ class KPIResponse(BaseModel):
     total_inversiones: DecimalAsFloat
     net: DecimalAsFloat
     transaction_count: int
-    avg_monthly_spend: DecimalAsFloat | None
+    avg_daily_spend: DecimalAsFloat | None
 
 
 class HistogramPoint(BaseModel):
-    week: str  # "YYYY-Www"
+    week: str  # "YYYY-MM-DD" (Monday of the week)
     total_spent: DecimalAsFloat
 
 
