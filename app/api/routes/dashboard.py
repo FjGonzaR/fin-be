@@ -101,6 +101,7 @@ def get_histogram(
         .join(Account, SourceFile.account_id == Account.id)
     )
     q = apply_transaction_filters(q, owner, account_id, date_from, date_to, category)
+    q = q.filter(Transaction.category != Category.PAGO)
     rows = q.group_by("week").order_by("week").all()
 
     return [

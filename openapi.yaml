@@ -575,7 +575,7 @@ paths:
       summary: Weekly expense histogram
       description: |
         Returns one data point per ISO week with aggregated `total_spent` in COP.
-        Sorted ascending by week.
+        Sorted ascending by week. PAGO transactions are always excluded.
       operationId: getDashboardHistogram
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
