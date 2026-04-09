@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "FastAPI dev",
+      "runtimeExecutable": "/Users/fragonzr/Documents/dashboard-finanzas/finanzas/fin-be/venv/bin/python3",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--reload"],
+      "port": 8000
+    }
+  ]
+}

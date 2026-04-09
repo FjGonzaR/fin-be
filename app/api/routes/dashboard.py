@@ -42,7 +42,7 @@ def get_kpis(
     total_gastos = Decimal("0")
     total_pagos = Decimal("0")
     total_inversiones = Decimal("0")
-    months_seen: set[str] = set()
+    days_seen: set[date] = set()
 
     _PAGO_CATEGORIES = {Category.PAGO}
     _INVERSION_CATEGORIES = {Category.INVERSION}
@@ -53,7 +53,7 @@ def get_kpis(
         amt = tx.amount
         if tx.currency == "USD":
             amt = (amt * USD_TO_COP).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        months_seen.add(tx.posted_at.strftime("%Y-%m"))
+        days_seen.add(tx.posted_at)
 
         if tx.category in _INGRESO_CATEGORIES:
             total_ingresos += amt
@@ -69,8 +69,8 @@ def get_kpis(
                 # Not a true INGRESO but counts as an entrada toward the net.
                 total_ingresos += amt
 
-    num_months = len(months_seen)
-    avg_monthly_spend = (total_gastos / num_months).quantize(Decimal("0.01")) if num_months else None
+    num_days = len(days_seen)
+    avg_daily_spend = (total_gastos / num_days).quantize(Decimal("0.01")) if num_days else None
 
     return KPIResponse(
         total_ingresos=total_ingresos,
@@ -79,7 +79,7 @@ def get_kpis(
         total_inversiones=total_inversiones,
         net=total_ingresos - total_gastos - total_inversiones,
         transaction_count=len(transactions),
-        avg_monthly_spend=avg_monthly_spend,
+        avg_daily_spend=avg_daily_spend,
     )
 
 
