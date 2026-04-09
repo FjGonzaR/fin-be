@@ -553,7 +553,7 @@ paths:
         - `total_pagos` — transactions categorized as `PAGO` (credit card payments from savings)
         - `total_inversiones` — transactions categorized as `INVERSION` (fund contributions)
         - `net` — `total_ingresos - total_gastos - total_inversiones` (`total_pagos` excluded to avoid double-counting CC expenses)
-        - `avg_monthly_spend` — `total_gastos` averaged over the number of distinct months in the result set
+        - `avg_daily_spend` — `total_gastos` averaged over the number of distinct days in the result set
       operationId: getDashboardKpis
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
@@ -575,7 +575,7 @@ paths:
       summary: Weekly expense histogram
       description: |
         Returns one data point per ISO week with aggregated `total_spent` in COP.
-        Sorted ascending by week.
+        Sorted ascending by week. PAGO transactions are always excluded.
       operationId: getDashboardHistogram
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
@@ -1009,10 +1009,10 @@ components:
             would double-count those expenses.
         transaction_count:
           type: integer
-        avg_monthly_spend:
+        avg_daily_spend:
           type: number
           nullable: true
-          description: total_gastos averaged over distinct months in the result set. Null when no data.
+          description: total_gastos averaged over distinct days in the result set. Null when no data.
 
     HistogramPoint:
       type: object
