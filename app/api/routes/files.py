@@ -4,8 +4,9 @@ from uuid import UUID
 import pikepdf
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentUser, DbSession
 from app.models import RawRow, SourceFile, Transaction
+from app.models.account import Account
 from app.schemas.file import FileMetadata, FilePreviewResponse, FileUploadResponse
 from app.services.storage import StorageService
 
@@ -21,14 +22,33 @@ def _unlock_pdf(content: bytes, password: str) -> bytes:
         return out.getvalue()
 
 
+def _get_file_or_404(file_id: UUID, db, current_user) -> SourceFile:
+    """Return SourceFile if it exists and belongs to the current user (or user is admin)."""
+    source_file = (
+        db.query(SourceFile)
+        .join(Account, SourceFile.account_id == Account.id)
+        .filter(SourceFile.id == file_id)
+        .first()
+    )
+    if not source_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    if not current_user.is_admin and source_file.account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="File not found")
+    return source_file
+
+
 @router.get("", response_model=list[FileMetadata])
 def list_files(
     db: DbSession,
+    current_user: CurrentUser,
     order: str = Query("desc", pattern="^(asc|desc)$", description="Sort by uploaded_at: asc or desc"),
 ):
-    """List all uploaded files with their metadata, sorted by upload date."""
+    """List uploaded files for the current user, sorted by upload date."""
     sort_col = SourceFile.uploaded_at.asc() if order == "asc" else SourceFile.uploaded_at.desc()
-    files = db.query(SourceFile).order_by(sort_col).all()
+    q = db.query(SourceFile).join(Account, SourceFile.account_id == Account.id)
+    if not current_user.is_admin:
+        q = q.filter(Account.user_id == current_user.id)
+    files = q.order_by(sort_col).all()
     return [
         FileMetadata(
             file_id=f.id,
@@ -47,12 +67,11 @@ def list_files(
 def preview_file(
     file_id: UUID,
     db: DbSession,
+    current_user: CurrentUser,
     limit: int = Query(20, ge=1, le=100, description="Number of rows to return"),
 ):
     """Return the first N raw rows of a processed file."""
-    source_file = db.query(SourceFile).filter(SourceFile.id == file_id).first()
-    if not source_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    source_file = _get_file_or_404(file_id, db, current_user)
 
     rows = (
         db.query(RawRow)
@@ -77,6 +96,7 @@ def preview_file(
 def get_file_url(
     file_id: UUID,
     db: DbSession,
+    current_user: CurrentUser,
     expires_in: int = Query(3600, ge=60, le=86400, description="URL validity in seconds"),
 ):
     """
@@ -84,9 +104,7 @@ def get_file_url(
 
     Not available for locally stored files (returns 501).
     """
-    source_file = db.query(SourceFile).filter(SourceFile.id == file_id).first()
-    if not source_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    source_file = _get_file_or_404(file_id, db, current_user)
 
     url = storage_service.get_signed_url(source_file.storage_uri, expires_in)
     if url is None:
@@ -99,16 +117,14 @@ def get_file_url(
 
 
 @router.delete("/{file_id}", status_code=204)
-def delete_file(file_id: UUID, db: DbSession):
+def delete_file(file_id: UUID, db: DbSession, current_user: CurrentUser):
     """
     Delete a source file from storage and the database.
 
     Returns 409 if the file has associated transactions — run
     DELETE /etl/reset/{file_id} first to remove them.
     """
-    source_file = db.query(SourceFile).filter(SourceFile.id == file_id).first()
-    if not source_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    source_file = _get_file_or_404(file_id, db, current_user)
 
     tx_count = (
         db.query(Transaction).filter(Transaction.source_file_id == file_id).count()
@@ -130,6 +146,7 @@ def delete_file(file_id: UUID, db: DbSession):
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
     db: DbSession,
+    current_user: CurrentUser,
     file: UploadFile = File(...),
     account_id: UUID = Form(...),
     file_password: str | None = Form(None, description="Password for password-protected files (e.g. Nequi PDF). Used to unlock the file before storage — not persisted."),
@@ -139,6 +156,13 @@ async def upload_file(
 
     Returns source_file record.
     """
+    # Verify the target account belongs to the current user
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not current_user.is_admin and account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Account not found")
+
     # Validate file type
     _ALLOWED_EXTENSIONS = {".xlsx", ".pdf"}
     filename = file.filename or ""

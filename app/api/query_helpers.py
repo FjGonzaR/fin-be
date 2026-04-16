@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, contains_eager
 
 from app.models.account import Account
-from app.models.enums import Category, OwnerEnum
+from app.models.enums import Category
 from app.models.source_file import SourceFile
 from app.models.transaction import Transaction
 
@@ -14,13 +14,16 @@ USD_TO_COP = Decimal("4000")
 
 def apply_transaction_filters(
     q,
-    owner: OwnerEnum | None,
+    user_id: UUID | None,
+    owner: str | None,
     account_id: UUID | None,
     date_from: date | None,
     date_to: date | None,
     category: Category | None = None,
 ):
     """Apply common filters to a query that already has SourceFile and Account joined."""
+    if user_id is not None:
+        q = q.filter(Account.user_id == user_id)
     if owner:
         q = q.filter(Account.owner == owner)
     if account_id:
@@ -36,7 +39,8 @@ def apply_transaction_filters(
 
 def build_transaction_query(
     db: Session,
-    owner: OwnerEnum | None,
+    user_id: UUID | None,
+    owner: str | None,
     account_id: UUID | None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -51,4 +55,4 @@ def build_transaction_query(
             contains_eager(Transaction.source_file).contains_eager(SourceFile.account)
         )
     )
-    return apply_transaction_filters(q, owner, account_id, date_from, date_to, category)
+    return apply_transaction_filters(q, user_id, owner, account_id, date_from, date_to, category)

@@ -8,10 +8,6 @@ class BankEnum(str, enum.Enum):
     NEQUI = "NEQUI"
 
 
-class OwnerEnum(str, enum.Enum):
-    PACHO = "PACHO"
-    LU = "LU"
-
 
 class AccountTypeEnum(str, enum.Enum):
     CREDITO = "CREDITO"

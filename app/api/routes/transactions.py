@@ -4,10 +4,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentUser, DbSession
 from app.api.query_helpers import USD_TO_COP, build_transaction_query
 from app.models import CategoryExample, Transaction
-from app.models.enums import Category, CategoryMethod, OwnerEnum
+from app.models.enums import Category, CategoryMethod
 from app.schemas.transaction import RecategorizeRequest, TransactionResponse
 
 router = APIRouter()
@@ -32,13 +32,15 @@ def _serialize_tx(tx) -> TransactionResponse:
 @router.get("", response_model=list[TransactionResponse])
 def list_transactions(
     db: DbSession,
+    current_user: CurrentUser,
     account_id: UUID | None = Query(None, description="Account ID to filter by"),
-    owner: OwnerEnum | None = Query(None, description="Owner to filter by"),
+    owner: str | None = Query(None, description="Owner label to filter by"),
     date_from: date | None = Query(None, description="Start date (inclusive), format YYYY-MM-DD"),
     date_to: date | None = Query(None, description="End date (inclusive), format YYYY-MM-DD"),
     category: Category | None = Query(None, description="Filter by category"),
 ):
-    query = build_transaction_query(db, owner, account_id, date_from, date_to, category)
+    user_id = None if current_user.is_admin else current_user.id
+    query = build_transaction_query(db, user_id, owner, account_id, date_from, date_to, category)
     query = query.order_by(Transaction.posted_at.desc())
     return [_serialize_tx(tx) for tx in query.all()]
 
@@ -48,13 +50,15 @@ def recategorize_transaction(
     transaction_id: UUID,
     body: RecategorizeRequest,
     db: DbSession,
+    current_user: CurrentUser,
 ):
     """
     Manually reclassify a transaction.
     Optionally seeds a new category_example from description_clean.
     """
+    user_id = None if current_user.is_admin else current_user.id
     tx = (
-        build_transaction_query(db, None, None, None)
+        build_transaction_query(db, user_id, None, None, None)
         .filter(Transaction.id == transaction_id)
         .first()
     )

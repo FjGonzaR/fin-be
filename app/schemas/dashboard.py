@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.enums import AccountTypeEnum, BankEnum, OwnerEnum
+from app.models.enums import AccountTypeEnum, BankEnum
 from app.schemas.types import DateAsLocalISO, DecimalAsFloat
 
 
@@ -37,5 +37,5 @@ class TopTransactionItem(BaseModel):
     merchant_guess: str | None
     account_name: str
     bank_name: BankEnum
-    owner: OwnerEnum
+    owner: str
     account_type: AccountTypeEnum

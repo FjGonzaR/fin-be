@@ -5,10 +5,10 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from sqlalchemy import case, func
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentUser, DbSession
 from app.api.query_helpers import USD_TO_COP, apply_transaction_filters, build_transaction_query
 from app.models.account import Account
-from app.models.enums import Category, OwnerEnum
+from app.models.enums import Category
 from app.models.source_file import SourceFile
 from app.models.transaction import Transaction
 from app.schemas.dashboard import (
@@ -30,13 +30,15 @@ _amount_cop = case(
 @router.get("/kpis", response_model=KPIResponse)
 def get_kpis(
     db: DbSession,
-    owner: OwnerEnum | None = Query(None),
+    current_user: CurrentUser,
+    owner: str | None = Query(None),
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     category: Category | None = Query(None),
 ):
-    transactions = build_transaction_query(db, owner, account_id, date_from, date_to, category).all()
+    user_id = None if current_user.is_admin else current_user.id
+    transactions = build_transaction_query(db, user_id, owner, account_id, date_from, date_to, category).all()
 
     total_ingresos = Decimal("0")
     total_gastos = Decimal("0")
@@ -86,12 +88,14 @@ def get_kpis(
 @router.get("/histogram", response_model=list[HistogramPoint])
 def get_histogram(
     db: DbSession,
-    owner: OwnerEnum | None = Query(None),
+    current_user: CurrentUser,
+    owner: str | None = Query(None),
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     category: Category | None = Query(None),
 ):
+    user_id = None if current_user.is_admin else current_user.id
     spent_expr = func.sum(case((_amount_cop < 0, -_amount_cop), else_=0))
     week_label = func.to_char(func.date_trunc("week", Transaction.posted_at), "YYYY-MM-DD").label("week")
 
@@ -100,7 +104,7 @@ def get_histogram(
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
     )
-    q = apply_transaction_filters(q, owner, account_id, date_from, date_to, category)
+    q = apply_transaction_filters(q, user_id, owner, account_id, date_from, date_to, category)
     q = q.filter(Transaction.category != Category.PAGO)
     rows = q.group_by("week").order_by("week").all()
 
@@ -116,12 +120,14 @@ def get_histogram(
 @router.get("/by-category", response_model=list[CategoryBreakdownItem])
 def get_by_category(
     db: DbSession,
-    owner: OwnerEnum | None = Query(None),
+    current_user: CurrentUser,
+    owner: str | None = Query(None),
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     category: Category | None = Query(None),
 ):
+    user_id = None if current_user.is_admin else current_user.id
     total_expr = func.sum(-_amount_cop).label("total")
     count_expr = func.count().label("count")
 
@@ -132,7 +138,7 @@ def get_by_category(
         .filter(Transaction.category.notin_([Category.PAGO, Category.INGRESO, Category.INVERSION]))
         .filter(_amount_cop < 0)
     )
-    q = apply_transaction_filters(q, owner, account_id, date_from, date_to, category)
+    q = apply_transaction_filters(q, user_id, owner, account_id, date_from, date_to, category)
     rows = q.group_by(Transaction.category).order_by(total_expr.desc()).all()
 
     grand_total = sum(Decimal(str(r.total or 0)) for r in rows if (r.total or 0) > 0)
@@ -155,15 +161,17 @@ def get_by_category(
 @router.get("/top-transactions", response_model=list[TopTransactionItem])
 def get_top_transactions(
     db: DbSession,
-    owner: OwnerEnum | None = Query(None),
+    current_user: CurrentUser,
+    owner: str | None = Query(None),
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     category: Category | None = Query(None),
     limit: int = Query(5, ge=1, le=20),
 ):
+    user_id = None if current_user.is_admin else current_user.id
     q = (
-        build_transaction_query(db, owner, account_id, date_from, date_to, category)
+        build_transaction_query(db, user_id, owner, account_id, date_from, date_to, category)
         .filter(_amount_cop < 0)
         .order_by(_amount_cop.asc())
         .limit(limit)

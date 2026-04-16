@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.api.deps import require_auth
-from app.api.routes import accounts, auth, categories, dashboard, etl, files, transactions
+from app.api.routes import accounts, admin, auth, categories, dashboard, etl, files, transactions
 
 api_router = APIRouter()
 
@@ -14,3 +14,5 @@ api_router.include_router(files.router, prefix="/files", tags=["files"], depende
 api_router.include_router(etl.router, prefix="/etl", tags=["etl"], dependencies=_auth)
 api_router.include_router(transactions.router, prefix="/transactions", tags=["transactions"], dependencies=_auth)
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"], dependencies=_auth)
+# Admin routes: no router-level auth — require_admin is declared per-route
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

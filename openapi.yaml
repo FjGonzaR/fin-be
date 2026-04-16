@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Finanzas Backend API
   description: Personal finance ETL + API
-  version: 0.2.0
+  version: 0.3.0
 
 servers:
   - url: http://localhost:8000
@@ -10,7 +10,9 @@ servers:
 
 tags:
   - name: auth
-    description: Authentication
+    description: Authentication and registration
+  - name: admin
+    description: Admin-only user and account management
   - name: accounts
     description: Bank accounts
   - name: files
@@ -36,7 +38,7 @@ paths:
       summary: List transaction categories
       operationId: listCategories
       security:
-        - bearerAuth: []
+        - BearerAuth: []
       parameters:
         - name: spending_only
           in: query
@@ -95,6 +97,120 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorDetail'
 
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      summary: Register with invite token
+      description: |
+        Create a new user account using a valid one-time invite token generated
+        by an admin. The token is invalidated after use.
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created and logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Invalid, used, or expired invite token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '409':
+          description: Username already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  # ──────────────────────────────────────────────
+  # ADMIN
+  # ──────────────────────────────────────────────
+
+  /admin/invite:
+    post:
+      tags: [admin]
+      summary: Create an invite token
+      description: |
+        Generates a one-time invite token valid for 7 days.
+        Share it with the person you want to invite — they use it at `POST /auth/register`.
+      operationId: createInvite
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: Invite token created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteResponse'
+        '403':
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: List all users
+      operationId: listUsers
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserSummary'
+        '403':
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /admin/users/{user_id}/promote:
+    patch:
+      tags: [admin]
+      summary: Promote user to admin
+      operationId: promoteUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User promoted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
   # ──────────────────────────────────────────────
   # ACCOUNTS
   # ──────────────────────────────────────────────
@@ -104,6 +220,8 @@ paths:
       tags: [accounts]
       summary: Get account by ID
       operationId: getAccount
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/AccountId'
       responses:
@@ -124,6 +242,8 @@ paths:
       tags: [accounts]
       summary: Update an account
       operationId: updateAccount
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/AccountId'
       requestBody:
@@ -153,6 +273,8 @@ paths:
         Deletes the account and cascade-deletes all associated source files,
         transactions, and raw rows.
       operationId: deleteAccount
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/AccountId'
       responses:
@@ -168,15 +290,15 @@ paths:
   /accounts:
     get:
       tags: [accounts]
-      summary: List all accounts
+      summary: List accounts for the current user
+      description: |
+        Returns only the accounts owned by the authenticated user.
+        Admin users see all accounts.
       operationId: listAccounts
+      security:
+        - BearerAuth: []
       parameters:
-        - name: owner
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/OwnerEnum'
-          description: Filter accounts by owner
+        - $ref: '#/components/parameters/OwnerFilter'
       responses:
         '200':
           description: OK
@@ -190,7 +312,12 @@ paths:
     post:
       tags: [accounts]
       summary: Create a new account
+      description: |
+        Creates an account owned by the authenticated user.
+        The `owner` field is a free-form label (e.g. "PACHO", "LU", or any string).
       operationId: createAccount
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -200,6 +327,8 @@ paths:
             example:
               bank_name: BANCOLOMBIA
               account_name: Cuenta de Ahorros
+              owner: PACHO
+              account_type: AHORROS
       responses:
         '201':
           description: Created
@@ -215,8 +344,10 @@ paths:
   /files:
     get:
       tags: [files]
-      summary: List all uploaded files
+      summary: List uploaded files for the current user
       operationId: listFiles
+      security:
+        - BearerAuth: []
       parameters:
         - name: order
           in: query
@@ -241,6 +372,8 @@ paths:
       tags: [files]
       summary: Preview raw rows of a processed file
       operationId: previewFile
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FileId'
         - name: limit
@@ -275,6 +408,8 @@ paths:
         open or download the file directly without proxying through the backend.
         Only available when Supabase Storage is configured (returns 501 otherwise).
       operationId: getFileUrl
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FileId'
         - name: expires_in
@@ -326,6 +461,8 @@ paths:
         Returns 409 if the file has associated transactions — run
         `DELETE /etl/reset/{file_id}` first to remove them.
       operationId: deleteFile
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FileId'
       responses:
@@ -353,7 +490,10 @@ paths:
         Returns the existing record if the file hash already exists.
         If `file_password` is provided, the PDF is unlocked in memory before
         being stored — the password itself is never persisted.
+        The `account_id` must belong to the authenticated user.
       operationId: uploadFile
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -403,6 +543,8 @@ paths:
         associated with the file.
         Returns immediately if the file was already processed.
       operationId: processEtl
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FileId'
       responses:
@@ -433,6 +575,8 @@ paths:
         Deletes all transactions and raw rows associated with the file and
         resets its `parse_status` back to `UPLOADED`.
       operationId: resetEtl
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/FileId'
       responses:
@@ -467,8 +611,10 @@ paths:
   /transactions:
     get:
       tags: [transactions]
-      summary: List transactions
+      summary: List transactions for the current user
       operationId: listTransactions
+      security:
+        - BearerAuth: []
       parameters:
         - name: account_id
           in: query
@@ -477,12 +623,7 @@ paths:
             type: string
             format: uuid
           description: Filter by account UUID
-        - name: owner
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/OwnerEnum'
-          description: Filter by owner
+        - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/DateFromFilter'
         - $ref: '#/components/parameters/DateToFilter'
         - $ref: '#/components/parameters/CategoryFilter'
@@ -505,6 +646,8 @@ paths:
         Optionally seeds a new `category_example` from `description_clean`
         to improve future automatic categorization.
       operationId: recategorizeTransaction
+      security:
+        - BearerAuth: []
       parameters:
         - name: transaction_id
           in: path
@@ -546,6 +689,7 @@ paths:
       description: |
         Returns aggregate KPIs for the filtered set of transactions.
         All amounts are in COP (USD transactions converted at 4000 COP/USD).
+        Results are scoped to the current user's accounts (admin sees all).
 
         Buckets are determined by transaction category:
         - `total_ingresos` — transactions categorized as `INGRESO` (money received into savings)
@@ -555,6 +699,8 @@ paths:
         - `net` — `total_ingresos - total_gastos - total_inversiones` (`total_pagos` excluded to avoid double-counting CC expenses)
         - `avg_daily_spend` — `total_gastos` averaged over the number of distinct days in the result set
       operationId: getDashboardKpis
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
@@ -576,7 +722,10 @@ paths:
       description: |
         Returns one data point per ISO week with aggregated `total_spent` in COP.
         Sorted ascending by week. PAGO transactions are always excluded.
+        Results are scoped to the current user's accounts (admin sees all).
       operationId: getDashboardHistogram
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
@@ -603,8 +752,10 @@ paths:
         Only negative-amount transactions are included, so income entries that happen to share
         a category label do not distort the breakdown.
         Transactions without a category appear as `"SIN_CATEGORIZAR"`.
-        Sorted by total descending.
+        Sorted by total descending. Results scoped to the current user (admin sees all).
       operationId: getDashboardByCategory
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
@@ -628,7 +779,10 @@ paths:
       description: |
         Returns the largest expenses (`amount < 0`) ordered by amount ascending
         (most negative first). All amounts are returned as positive values in COP.
+        Results are scoped to the current user's accounts (admin sees all).
       operationId: getDashboardTopTransactions
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/OwnerFilter'
         - $ref: '#/components/parameters/AccountIdFilter'
@@ -693,8 +847,8 @@ components:
       in: query
       required: false
       schema:
-        $ref: '#/components/schemas/OwnerEnum'
-      description: Filter by owner
+        type: string
+      description: Filter by owner label (e.g. "PACHO", "LU")
 
     AccountIdFilter:
       name: account_id
@@ -741,10 +895,6 @@ components:
       type: string
       enum: [BANCOLOMBIA, RAPPI, FALABELLA, NEQUI]
 
-    OwnerEnum:
-      type: string
-      enum: [PACHO, LU]
-
     AccountTypeEnum:
       type: string
       enum: [CREDITO, DEBITO, AHORROS]
@@ -780,6 +930,63 @@ components:
       type: string
       enum: [UPLOADED, PROCESSED, FAILED]
 
+    # ── Auth ───────────────────────────────────
+
+    RegisterRequest:
+      type: object
+      required: [username, password, invite_token]
+      properties:
+        username:
+          type: string
+          example: lupa
+        password:
+          type: string
+          format: password
+        invite_token:
+          type: string
+          format: uuid
+          description: One-time invite token generated by an admin
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: bearer
+        is_admin:
+          type: boolean
+          description: Whether the authenticated user has admin privileges
+
+    # ── Admin ──────────────────────────────────
+
+    InviteResponse:
+      type: object
+      properties:
+        invite_token:
+          type: string
+          format: uuid
+          description: One-time token to share with the invitee
+        expires_at:
+          type: string
+          format: date-time
+          description: Token expiry (7 days from creation)
+
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        is_admin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
     # ── Accounts ───────────────────────────────
 
     AccountUpdate:
@@ -790,7 +997,8 @@ components:
         account_name:
           type: string
         owner:
-          $ref: '#/components/schemas/OwnerEnum'
+          type: string
+          description: Free-form owner label (e.g. "PACHO", "LU")
         account_type:
           $ref: '#/components/schemas/AccountTypeEnum'
 
@@ -804,7 +1012,9 @@ components:
           type: string
           example: Cuenta de Ahorros
         owner:
-          $ref: '#/components/schemas/OwnerEnum'
+          type: string
+          description: Free-form owner label (e.g. "PACHO", "LU")
+          example: PACHO
         account_type:
           $ref: '#/components/schemas/AccountTypeEnum'
 
@@ -819,9 +1029,15 @@ components:
         account_name:
           type: string
         owner:
-          $ref: '#/components/schemas/OwnerEnum'
+          type: string
+          description: Free-form owner label
         account_type:
           $ref: '#/components/schemas/AccountTypeEnum'
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the user who owns this account
 
     # ── Files ──────────────────────────────────
 
@@ -956,7 +1172,8 @@ components:
         bank_name:
           $ref: '#/components/schemas/BankEnum'
         owner:
-          $ref: '#/components/schemas/OwnerEnum'
+          type: string
+          description: Free-form owner label on the account
         account_type:
           $ref: '#/components/schemas/AccountTypeEnum'
 
@@ -1069,18 +1286,10 @@ components:
         bank_name:
           $ref: '#/components/schemas/BankEnum'
         owner:
-          $ref: '#/components/schemas/OwnerEnum'
+          type: string
+          description: Free-form owner label on the account
         account_type:
           $ref: '#/components/schemas/AccountTypeEnum'
-
-    TokenResponse:
-      type: object
-      properties:
-        access_token:
-          type: string
-        token_type:
-          type: string
-          example: bearer
 
     # ── Common ─────────────────────────────────
 

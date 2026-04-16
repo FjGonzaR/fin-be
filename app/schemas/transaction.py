@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.enums import AccountTypeEnum, BankEnum, Category, CategoryMethod, OwnerEnum
+from app.models.enums import AccountTypeEnum, BankEnum, Category, CategoryMethod
 from app.schemas.types import DateAsLocalISO, DecimalAsFloat
 
 
@@ -26,7 +26,7 @@ class TransactionResponse(BaseModel):
     account_id: UUID
     account_name: str
     bank_name: BankEnum
-    owner: OwnerEnum
+    owner: str
     account_type: AccountTypeEnum
 
     model_config = {"from_attributes": True, "frozen": False}
