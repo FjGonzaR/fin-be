@@ -4,11 +4,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 from sqlalchemy import case, func
+from sqlalchemy.orm import aliased
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.query_helpers import USD_TO_COP, apply_transaction_filters, build_transaction_query
 from app.models.account import Account
-from app.models.enums import Category
+from app.models.category import Category
 from app.models.source_file import SourceFile
 from app.models.transaction import Transaction
 from app.schemas.dashboard import (
@@ -26,6 +27,12 @@ _amount_cop = case(
     else_=Transaction.amount,
 )
 
+# Slug-based behavior (mirrors the old Category enum constants).
+_PAGO_SLUGS = {"PAGO"}
+_INVERSION_SLUGS = {"INVERSION"}
+_INGRESO_SLUGS = {"INGRESO"}
+_EXCLUDE_FROM_GASTOS_SLUGS = {"PAGO", "INVERSION", "INGRESO", "MOVIMIENTO_ENTRE_BANCOS"}
+
 
 @router.get("/kpis", response_model=KPIResponse)
 def get_kpis(
@@ -35,7 +42,7 @@ def get_kpis(
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    category: Category | None = Query(None),
+    category: str | None = Query(None),
 ):
     user_id = None if current_user.is_admin else current_user.id
     transactions = build_transaction_query(db, user_id, owner, account_id, date_from, date_to, category).all()
@@ -46,24 +53,21 @@ def get_kpis(
     total_inversiones = Decimal("0")
     days_seen: set[date] = set()
 
-    _PAGO_CATEGORIES = {Category.PAGO}
-    _INVERSION_CATEGORIES = {Category.INVERSION}
-    _INGRESO_CATEGORIES = {Category.INGRESO}
-    _EXCLUDE_FROM_GASTOS = {Category.PAGO, Category.INVERSION, Category.INGRESO, Category.MOVIMIENTO_ENTRE_BANCOS}
-
     for tx in transactions:
         amt = tx.amount
         if tx.currency == "USD":
             amt = (amt * USD_TO_COP).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         days_seen.add(tx.posted_at)
 
-        if tx.category in _INGRESO_CATEGORIES:
+        slug = tx.category.slug if tx.category else None
+
+        if slug in _INGRESO_SLUGS:
             total_ingresos += amt
-        elif tx.category in _PAGO_CATEGORIES:
+        elif slug in _PAGO_SLUGS:
             total_pagos += abs(amt)
-        elif tx.category in _INVERSION_CATEGORIES:
+        elif slug in _INVERSION_SLUGS:
             total_inversiones += abs(amt)
-        elif tx.category not in _EXCLUDE_FROM_GASTOS:
+        elif slug not in _EXCLUDE_FROM_GASTOS_SLUGS:
             if amt < 0:
                 total_gastos += abs(amt)
             else:
@@ -93,19 +97,21 @@ def get_histogram(
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    category: Category | None = Query(None),
+    category: str | None = Query(None),
 ):
     user_id = None if current_user.is_admin else current_user.id
     spent_expr = func.sum(case((_amount_cop < 0, -_amount_cop), else_=0))
     week_label = func.to_char(func.date_trunc("week", Transaction.posted_at), "YYYY-MM-DD").label("week")
 
+    cat_alias = aliased(Category)
     q = (
         db.query(week_label, spent_expr.label("total_spent"))
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
+        .outerjoin(cat_alias, Transaction.category_id == cat_alias.id)
     )
     q = apply_transaction_filters(q, user_id, owner, account_id, date_from, date_to, category)
-    q = q.filter(Transaction.category != Category.PAGO)
+    q = q.filter((cat_alias.slug != "PAGO") | (cat_alias.slug.is_(None)))
     rows = q.group_by("week").order_by("week").all()
 
     return [
@@ -125,21 +131,26 @@ def get_by_category(
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    category: Category | None = Query(None),
+    category: str | None = Query(None),
 ):
     user_id = None if current_user.is_admin else current_user.id
     total_expr = func.sum(-_amount_cop).label("total")
     count_expr = func.count().label("count")
 
+    cat_alias = aliased(Category)
     q = (
-        db.query(Transaction.category, total_expr, count_expr)
+        db.query(cat_alias.slug.label("slug"), total_expr, count_expr)
         .join(SourceFile, Transaction.source_file_id == SourceFile.id)
         .join(Account, SourceFile.account_id == Account.id)
-        .filter(Transaction.category.notin_([Category.PAGO, Category.INGRESO, Category.INVERSION]))
+        .outerjoin(cat_alias, Transaction.category_id == cat_alias.id)
+        .filter(
+            (cat_alias.slug.is_(None))
+            | (~cat_alias.slug.in_(["PAGO", "INGRESO", "INVERSION"]))
+        )
         .filter(_amount_cop < 0)
     )
     q = apply_transaction_filters(q, user_id, owner, account_id, date_from, date_to, category)
-    rows = q.group_by(Transaction.category).order_by(total_expr.desc()).all()
+    rows = q.group_by(cat_alias.slug).order_by(total_expr.desc()).all()
 
     grand_total = sum(Decimal(str(r.total or 0)) for r in rows if (r.total or 0) > 0)
 
@@ -149,7 +160,7 @@ def get_by_category(
         percentage = (total / grand_total * 100).quantize(Decimal("0.01")) if grand_total else Decimal("0")
         result.append(
             CategoryBreakdownItem(
-                category=row.category.value if row.category else "SIN_CATEGORIZAR",
+                category=row.slug if row.slug else "SIN_CATEGORIZAR",
                 total=total,
                 percentage=percentage,
                 count=row.count,
@@ -166,7 +177,7 @@ def get_top_transactions(
     account_id: UUID | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    category: Category | None = Query(None),
+    category: str | None = Query(None),
     limit: int = Query(5, ge=1, le=20),
 ):
     user_id = None if current_user.is_admin else current_user.id
@@ -190,7 +201,7 @@ def get_top_transactions(
                 posted_at=tx.posted_at,
                 description_clean=tx.description_clean,
                 amount=abs(amt),
-                category=tx.category.value if tx.category else None,
+                category=tx.category.slug if tx.category else None,
                 merchant_guess=tx.merchant_guess,
                 account_name=account.account_name,
                 bank_name=account.bank_name,

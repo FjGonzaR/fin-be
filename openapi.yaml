@@ -183,6 +183,234 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorDetail'
 
+  /admin/categories:
+    get:
+      tags: [admin]
+      summary: List all categories (including inactive)
+      operationId: adminListCategories
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: include_inactive
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+        '403':
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+    post:
+      tags: [admin]
+      summary: Create a new category
+      operationId: adminCreateCategory
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '409':
+          description: Slug already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /admin/categories/{category_id}:
+    patch:
+      tags: [admin]
+      summary: Update a category
+      description: |
+        Updates name, slug, description, or is_active. System categories
+        (is_system=true) cannot have their slug changed or be deactivated.
+      operationId: adminUpdateCategory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '404':
+          description: Category not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '409':
+          description: Slug conflict or operation forbidden on system category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+    delete:
+      tags: [admin]
+      summary: Delete a category
+      description: |
+        Hard-deletes a category. System categories cannot be deleted. If the
+        category has transactions, pass `reassign_to=<other_category_id>` to
+        reassign them; otherwise the request is rejected with 409.
+      operationId: adminDeleteCategory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: reassign_to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Category not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '409':
+          description: System category or in use without reassign_to
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /admin/categories/{category_id}/keywords:
+    get:
+      tags: [admin]
+      summary: List keywords for a category
+      operationId: adminListCategoryKeywords
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryKeyword'
+        '404':
+          description: Category not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+    post:
+      tags: [admin]
+      summary: Add a manual keyword to a category
+      operationId: adminAddCategoryKeyword
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryKeywordCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryKeyword'
+        '409':
+          description: Keyword already exists for this category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /admin/categories/{category_id}/keywords/{keyword_id}:
+    delete:
+      tags: [admin]
+      summary: Delete a keyword from a category
+      operationId: adminDeleteCategoryKeyword
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyword_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Keyword not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
   /admin/users/{user_id}/promote:
     patch:
       tags: [admin]
@@ -642,9 +870,11 @@ paths:
       tags: [transactions]
       summary: Manually recategorize a transaction
       description: |
-        Sets the category on the transaction with `category_method=USER`.
-        Optionally seeds a new `category_example` from `description_clean`
-        to improve future automatic categorization.
+        Sets the category on the transaction with `category_method=USER` and
+        confidence 1.00. Always upserts the (description_clean, category) pair
+        into `category_examples` so the classifier picks it up as a user override
+        on future runs, and triggers the keyword learner — recurring tokens may
+        be promoted to LEARNED keywords on `category_keywords`.
       operationId: recategorizeTransaction
       security:
         - BearerAuth: []
@@ -662,7 +892,7 @@ paths:
             schema:
               $ref: '#/components/schemas/RecategorizeRequest'
             example:
-              category: OCIO
+              category_slug: OCIO
               description_clean: NETFLIX DL
       responses:
         '200':
@@ -884,8 +1114,8 @@ components:
       in: query
       required: false
       schema:
-        $ref: '#/components/schemas/Category'
-      description: Filter by transaction category
+        $ref: '#/components/schemas/CategorySlug'
+      description: Filter by transaction category slug (e.g. "RESTAURANTES")
 
   schemas:
 
@@ -900,27 +1130,98 @@ components:
       enum: [CREDITO, DEBITO, AHORROS]
 
     Category:
+      type: object
+      description: |
+        Admin-managed category. Categories with `is_system=true` have hardcoded
+        behavior in the dashboard (e.g. PAGO, INGRESO, INVERSION, MOVIMIENTO_ENTRE_BANCOS, OTROS)
+        and cannot be renamed or deleted.
+      required: [id, slug, name, is_active, is_system]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          description: Stable identifier used by code and filters (uppercase snake_case)
+          example: RESTAURANTES
+        name:
+          type: string
+          example: Restaurantes
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        is_system:
+          type: boolean
+
+    CategorySlug:
       type: string
-      enum:
-        - HOGAR
-        - DOMICILIOS
-        - CARRO
-        - TRANSPORTE
-        - OCIO
-        - RESTAURANTES
-        - ROPA
-        - SALUD
-        - PRESTACIONES
-        - REGALOS
-        - EDUCACION
-        - TRABAJO
-        - COBRO_BANCARIO
-        - PAGO
-        - PLATAFORMAS
-        - INGRESO
-        - INVERSION
-        - MOVIMIENTO_ENTRE_BANCOS
-        - OTROS
+      description: Slug of a category (matches `Category.slug`). Free-form to support admin-defined categories.
+      example: RESTAURANTES
+
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          description: Optional. If omitted, derived from `name`.
+        description:
+          type: string
+          nullable: true
+
+    CategoryUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+
+    KeywordOrigin:
+      type: string
+      enum: [MANUAL, LEARNED]
+      description: |
+        - `MANUAL`: keyword was added by an admin (or seeded from the original RULES dict).
+        - `LEARNED`: keyword was promoted automatically by the keyword learner after recurring user reclassifications.
+
+    CategoryKeyword:
+      type: object
+      required: [id, category_id, keyword, origin, weight, is_active, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        keyword:
+          type: string
+        origin:
+          $ref: '#/components/schemas/KeywordOrigin'
+        weight:
+          type: integer
+          description: For LEARNED keywords, the count of reclassifications that promoted it.
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CategoryKeywordCreate:
+      type: object
+      required: [keyword]
+      properties:
+        keyword:
+          type: string
 
     CategoryMethod:
       type: string
@@ -1149,9 +1450,15 @@ components:
         details_json:
           type: object
           nullable: true
-        category:
-          $ref: '#/components/schemas/Category'
+        category_id:
+          type: string
+          format: uuid
           nullable: true
+          description: FK to `categories.id`. Null when the transaction is uncategorized.
+        category:
+          type: string
+          nullable: true
+          description: Slug of the assigned category (mirror of `category_id` for convenience).
         category_confidence:
           type: number
           format: float
@@ -1179,16 +1486,24 @@ components:
 
     RecategorizeRequest:
       type: object
-      required: [category]
+      description: |
+        Reassign a transaction to a category. Provide either `category_id` or
+        `category_slug`. The reclassification always upserts a CategoryExample
+        and runs the keyword learner so future classifications benefit from it.
       properties:
-        category:
-          $ref: '#/components/schemas/Category'
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+        category_slug:
+          $ref: '#/components/schemas/CategorySlug'
         description_clean:
           type: string
           nullable: true
           description: |
-            If provided, seeds a new category_example entry so future
-            transactions with this description are auto-categorized.
+            Optional. Defaults to the transaction's existing `description_clean`.
+            The (description_clean, category_id) pair is upserted into
+            `category_examples` and feeds the keyword learner.
 
     # ── Dashboard ──────────────────────────────
 

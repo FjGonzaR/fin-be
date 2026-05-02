@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, contains_eager
 
 from app.models.account import Account
-from app.models.enums import Category
+from app.models.category import Category
 from app.models.source_file import SourceFile
 from app.models.transaction import Transaction
 
@@ -19,9 +19,9 @@ def apply_transaction_filters(
     account_id: UUID | None,
     date_from: date | None,
     date_to: date | None,
-    category: Category | None = None,
+    category: str | None = None,
 ):
-    """Apply common filters to a query that already has SourceFile and Account joined."""
+    """Apply common filters. `category` is a slug (string)."""
     if user_id is not None:
         q = q.filter(Account.user_id == user_id)
     if owner:
@@ -33,7 +33,7 @@ def apply_transaction_filters(
     if date_to:
         q = q.filter(Transaction.posted_at <= date_to)
     if category:
-        q = q.filter(Transaction.category == category)
+        q = q.filter(Transaction.category.has(Category.slug == category))
     return q
 
 
@@ -44,7 +44,7 @@ def build_transaction_query(
     account_id: UUID | None,
     date_from: date | None = None,
     date_to: date | None = None,
-    category: Category | None = None,
+    category: str | None = None,
 ):
     """Return ORM query of Transaction with source_file and account eagerly loaded."""
     q = (

@@ -16,7 +16,7 @@ from app.etl.parsers.nequi_pdf import parse_nequi_pdf
 from app.etl.parsers.bancolombia_xlsx_pesos import parse_bancolombia_xlsx_pesos
 from app.etl.parsers.falabella_xlsx_movimientos import parse_falabella_xlsx
 from app.etl.parsers.rappicard_davivienda_pdf import parse_rappicard_davivienda_pdf
-from app.models import CategoryExample, RawRow, SourceFile, Transaction
+from app.models import RawRow, SourceFile, Transaction
 from app.models.enums import AccountTypeEnum, BankEnum
 from app.services.llm_client import OpenRouterClient
 from app.services.storage import StorageService
@@ -126,13 +126,7 @@ class ETLPipeline:
         )
 
     def _build_categorization_service(self) -> CategorizationService:
-        examples = self.db.query(CategoryExample).all()
-        examples_dicts = [
-            {"description_clean": e.description_clean, "category": e.category.value, "merchant": e.merchant}
-            for e in examples
-        ]
-        llm_client = OpenRouterClient()
-        return CategorizationService(examples=examples_dicts, llm_client=llm_client)
+        return CategorizationService.from_db(self.db, llm_client=OpenRouterClient())
 
     def _normalize_and_persist(
         self, source_file: SourceFile, parsed_rows: list[dict], normalizer
@@ -163,7 +157,7 @@ class ETLPipeline:
                 currency=raw_tx.get("currency", "COP"),
                 fingerprint=fingerprint,
                 details_json=normalized["details_json"],
-                category=cat.category,
+                category_id=cat.category_id,
                 category_confidence=cat.category_confidence,
                 category_method=cat.category_method,
                 merchant_guess=cat.merchant_guess,
